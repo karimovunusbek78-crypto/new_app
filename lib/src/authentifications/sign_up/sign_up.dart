@@ -12,6 +12,7 @@ class SignUp extends StatefulWidget {
 
 class _SignUpState extends State<SignUp> {
   final _formKey = GlobalKey<FormState>();
+  final _nameController = TextEditingController();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   final _confirmController = TextEditingController();
@@ -23,6 +24,7 @@ class _SignUpState extends State<SignUp> {
 
   @override
   void dispose() {
+    _nameController.dispose();
     _emailController.dispose();
     _passwordController.dispose();
     _confirmController.dispose();
@@ -33,10 +35,19 @@ class _SignUpState extends State<SignUp> {
     if (!_formKey.currentState!.validate()) return;
     setState(() { _isLoading = true; _errorMessage = null; });
     try {
-      await FirebaseAuth.instance.createUserWithEmailAndPassword(
+      final credential = await FirebaseAuth.instance.createUserWithEmailAndPassword(
         email: _emailController.text.trim(),
         password: _passwordController.text.trim(),
       );
+      // Save display name
+      await credential.user?.updateDisplayName(_nameController.text.trim());
+
+      // AuthWrapper StreamBuilder detects login → rebuilds to MainNavBar.
+      // SignUp was pushed on top of SignIn, so pop both back to the root
+      // so AuthWrapper's new state becomes visible.
+      if (mounted) {
+        Navigator.of(context).popUntil((route) => route.isFirst);
+      }
     } on FirebaseAuthException catch (e) {
       setState(() {
         switch (e.code) {
@@ -86,6 +97,19 @@ class _SignUpState extends State<SignUp> {
                   ),
                   SizedBox(height: 2.h),
                 ],
+                AuthLabel(text: 'Имя'),
+                SizedBox(height: 1.h),
+                AuthInputField(
+                  controller: _nameController,
+                  hint: 'Введите ваше имя',
+                  prefixIcon: Icons.person_outline_rounded,
+                  keyboardType: TextInputType.name,
+                  validator: (v) {
+                    if (v == null || v.trim().isEmpty) return 'Введите имя';
+                    return null;
+                  },
+                ),
+                SizedBox(height: 2.5.h),
                 AuthLabel(text: 'Email'),
                 SizedBox(height: 1.h),
                 AuthInputField(

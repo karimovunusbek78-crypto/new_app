@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:responsive_sizer/responsive_sizer.dart';
 import 'package:new_app/src/authentifications/sign_up/sign_up.dart';
@@ -34,15 +35,46 @@ class _SignInState extends State<SignIn> {
         email: _emailController.text.trim(),
         password: _passwordController.text.trim(),
       );
+      // AuthWrapper StreamBuilder detects login → rebuilds to MainNavBar.
+      // If SignIn was reached via Navigator.push (e.g. from SignUp), pop
+      // back to the root so AuthWrapper's new state becomes visible.
+      if (mounted) {
+        Navigator.of(context).popUntil((route) => route.isFirst);
+      }
     } on FirebaseAuthException catch (e) {
+      debugPrint('FirebaseAuthException code: ${e.code}, message: ${e.message}');
       setState(() {
         switch (e.code) {
-          case 'user-not-found': _errorMessage = 'Пользователь не найден'; break;
-          case 'wrong-password': _errorMessage = 'Неверный пароль'; break;
-          case 'invalid-email': _errorMessage = 'Неверный формат email'; break;
-          case 'too-many-requests': _errorMessage = 'Слишком много попыток. Попробуйте позже'; break;
-          default: _errorMessage = 'Ошибка входа. Попробуйте снова';
+          case 'user-not-found':
+            _errorMessage = 'Пользователь не найден';
+            break;
+          case 'wrong-password':
+            _errorMessage = 'Неверный пароль';
+            break;
+          case 'invalid-email':
+            _errorMessage = 'Неверный формат email';
+            break;
+          case 'too-many-requests':
+            _errorMessage = 'Слишком много попыток. Попробуйте позже';
+            break;
+          case 'invalid-credential':
+            _errorMessage = 'Неверный email или пароль';
+            break;
+          case 'user-disabled':
+            _errorMessage = 'Аккаунт отключён';
+            break;
+          case 'network-request-failed':
+            _errorMessage = 'Проблема с сетью. Проверьте интернет';
+            break;
+          default:
+            _errorMessage = 'Ошибка входа: ${e.code}';
         }
+      });
+    } catch (e) {
+      // Catches non-FirebaseAuthException errors (e.g. plugin/Pigeon bugs)
+      debugPrint('Unexpected sign-in error: $e');
+      setState(() {
+        _errorMessage = 'Непредвиденная ошибка: $e';
       });
     } finally {
       if (mounted) setState(() => _isLoading = false);
@@ -61,16 +93,7 @@ class _SignInState extends State<SignIn> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                SizedBox(height: 2.h),
-                GestureDetector(
-                  onTap: () => Navigator.pop(context),
-                  child: Container(
-                    width: 10.w, height: 10.w,
-                    decoration: BoxDecoration(color: const Color(0xFFF5F5F5), borderRadius: BorderRadius.circular(12)),
-                    child: const Icon(Icons.arrow_back_rounded, color: Color(0xFF1C1C1E)),
-                  ),
-                ),
-                SizedBox(height: 4.h),
+                SizedBox(height: 6.h),
                 Text('Добро пожаловать', style: TextStyle(fontSize: 24.sp, fontWeight: FontWeight.w800, color: const Color(0xFF1C1C1E), letterSpacing: -0.5)),
                 SizedBox(height: 0.8.h),
                 Text('Войдите, чтобы продолжить', style: TextStyle(fontSize: 13.sp, color: const Color(0xFF9E9E9E))),
@@ -115,21 +138,6 @@ class _SignInState extends State<SignIn> {
                     return null;
                   },
                 ),
-                SizedBox(height: 1.5.h),
-                Align(
-                  alignment: Alignment.centerRight,
-                  child: GestureDetector(
-                    onTap: () async {
-                      final email = _emailController.text.trim();
-                      if (email.isEmpty) { setState(() => _errorMessage = 'Введите email для сброса пароля'); return; }
-                      try {
-                        await FirebaseAuth.instance.sendPasswordResetEmail(email: email);
-                        if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Письмо для сброса отправлено')));
-                      } catch (_) { setState(() => _errorMessage = 'Ошибка отправки письма'); }
-                    },
-                    child: Text('Забыли пароль?', style: TextStyle(fontSize: 12.sp, fontWeight: FontWeight.w600, color: const Color(0xFF2D1B6E))),
-                  ),
-                ),
                 SizedBox(height: 4.h),
                 SizedBox(
                   width: double.infinity, height: 7.h,
@@ -164,7 +172,7 @@ class _SignInState extends State<SignIn> {
   }
 }
 
-// ── Shared widgets (import these in sign_up.dart too) ─────────────────────
+// ── Shared widgets ─────────────────────────────────────────────────────────
 
 class AuthLabel extends StatelessWidget {
   final String text;
