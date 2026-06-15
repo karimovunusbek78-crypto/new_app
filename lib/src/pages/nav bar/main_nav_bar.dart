@@ -4,6 +4,7 @@ import 'package:responsive_sizer/responsive_sizer.dart';
 import 'package:new_app/src/pages/favorite/favorite_page.dart';
 import 'package:new_app/src/pages/pages.dart';
 import 'package:new_app/src/pages/profile/profile_page.dart';
+import 'package:new_app/src/pages/add/add_page.dart'; 
 
 class MainNavBar extends StatefulWidget {
   const MainNavBar({Key? key}) : super(key: key);
@@ -34,6 +35,14 @@ class _MainNavBarState extends State<MainNavBar> {
     setState(() => _currentIndex = index);
   }
 
+  void _onAddTap() {
+    HapticFeedback.lightImpact();
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const AddPage()),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -43,6 +52,7 @@ class _MainNavBarState extends State<MainNavBar> {
         items: _items,
         currentIndex: _currentIndex,
         onTap: _onTap,
+        onAddTap: _onAddTap,
       ),
     );
   }
@@ -58,82 +68,128 @@ class _BottomNav extends StatelessWidget {
   final List<_NavItemData> items;
   final int currentIndex;
   final ValueChanged<int> onTap;
+  final VoidCallback onAddTap;
 
   const _BottomNav({
     required this.items,
     required this.currentIndex,
     required this.onTap,
+    required this.onAddTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        border: const Border(
-          top: BorderSide(color: Color(0xFFEEEEEE), width: 1),
+    return Stack(
+      clipBehavior: Clip.none,
+      alignment: Alignment.topCenter,
+      children: [
+        Container(
+          decoration: BoxDecoration(
+            color: Colors.white,
+            border: const Border(
+              top: BorderSide(color: Color(0xFFEEEEEE), width: 1),
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.06),
+                blurRadius: 2.h,
+                offset: const Offset(0, -4),
+              ),
+            ],
+          ),
+          child: SafeArea(
+            top: false,
+            child: SizedBox(
+              height: 8.h,
+              child: Row(
+                children: [
+                  // Left two items
+                  _navItem(items[0], 0),
+                  _navItem(items[1], 1),
+                  // Empty space reserved for the center + button
+                  SizedBox(width: 18.w),
+                  // Right two items
+                  _navItem(items[2], 2),
+                  _navItem(items[3], 3),
+                ],
+              ),
+            ),
+          ),
         ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.06),
-            blurRadius: 2.h,
-            offset: const Offset(0, -4),
-          ),
-        ],
-      ),
-      child: SafeArea(
-        top: false,
-        child: SizedBox(
-          height: 8.h,
-          child: Row(
-            children: List.generate(items.length, (i) {
-              final isActive = i == currentIndex;
-              return Expanded(
-                child: GestureDetector(
-                  onTap: () => onTap(i),
-                  behavior: HitTestBehavior.opaque,
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      AnimatedContainer(
-                        duration: const Duration(milliseconds: 200),
-                        padding: EdgeInsets.symmetric(
-                          horizontal: 3.5.w,
-                          vertical: 0.8.h,
-                        ),
-                        decoration: BoxDecoration(
-                          color: isActive
-                              ? const Color.fromARGB(255, 5, 2, 16).withOpacity(0.1)
-                              : Colors.transparent,
-                          borderRadius: BorderRadius.circular(1.5.h),
-                        ),
-                        child: Icon(
-                          items[i].icon,
-                          size: 2.8.h,
-                          color: isActive
-                              ? const Color.fromARGB(255, 5, 2, 19)
-                              : const Color(0xFFBBBBBB),
-                        ),
-                      ),
-                      SizedBox(height: 0.4.h),
-                      AnimatedDefaultTextStyle(
-                        duration: const Duration(milliseconds: 200),
-                        style: TextStyle(
-                          fontSize: 11.sp,
-                          fontWeight:
-                              isActive ? FontWeight.w700 : FontWeight.w500,
-                          color: isActive
-                              ? const Color.fromARGB(255, 6, 3, 19)
-                              : const Color(0xFFBBBBBB),
-                        ),
-                        child: Text(items[i].label),
-                      ),
-                    ],
+        // Center floating "+" button, raised above the nav bar
+        Positioned(
+          top: -0.7.h,
+          child: GestureDetector(
+            onTap: onAddTap,
+            behavior: HitTestBehavior.opaque,
+            child: Container(
+              width: 6.h,
+              height: 6.h,
+              decoration: BoxDecoration(
+                color: const Color(0xFF2D1B6E),
+                shape: BoxShape.circle,
+                boxShadow: [
+                  BoxShadow(
+                    color: const Color(0xFF2D1B6E).withOpacity(0.35),
+                    blurRadius: 12,
+                    offset: const Offset(0, 4),
                   ),
-                ),
-              );
-            }),
+                ],
+              ),
+              child: Icon(
+                Icons.add_rounded,
+                color: Colors.white,
+                size: 3.2.h,
+              ),
+            ),
           ),
+        ),
+      ],
+    );
+  }
+
+  Widget _navItem(_NavItemData item, int index) {
+    final isActive = index == currentIndex;
+    return Expanded(
+      child: GestureDetector(
+        onTap: () => onTap(index),
+        behavior: HitTestBehavior.opaque,
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 200),
+              padding: EdgeInsets.symmetric(
+                horizontal: 3.5.w,
+                vertical: 0.8.h,
+              ),
+              decoration: BoxDecoration(
+                color: isActive
+                    ? const Color.fromARGB(255, 5, 2, 16).withOpacity(0.1)
+                    : Colors.transparent,
+                borderRadius: BorderRadius.circular(1.5.h),
+              ),
+              child: Icon(
+                item.icon,
+                size: 2.8.h,
+                color: isActive
+                    ? const Color.fromARGB(255, 5, 2, 19)
+                    : const Color(0xFFBBBBBB),
+              ),
+            ),
+            SizedBox(height: 0.4.h),
+            AnimatedDefaultTextStyle(
+              duration: const Duration(milliseconds: 200),
+              style: TextStyle(
+                fontSize: 11.sp,
+                fontWeight: isActive ? FontWeight.w700 : FontWeight.w500,
+                color: isActive
+                    ? const Color.fromARGB(255, 6, 3, 19)
+                    : const Color(0xFFBBBBBB),
+              ),
+              child: Text(item.label),
+            ),
+          ],
         ),
       ),
     );
