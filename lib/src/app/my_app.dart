@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:new_app/src/auth_wrapper.dart';
+import 'package:new_app/src/authentifications/auth/auth_wrapper.dart';
 import 'package:responsive_sizer/responsive_sizer.dart';
 
 class MyApp extends StatelessWidget {
