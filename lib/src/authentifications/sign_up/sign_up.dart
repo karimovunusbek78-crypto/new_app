@@ -20,7 +20,7 @@ class _SignUpState extends State<SignUp> {
   bool _obscureConfirm = true;
   bool _isLoading = false;
   String? _errorMessage;
-
+  
   @override
   void dispose() {
     _emailController.dispose();

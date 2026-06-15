@@ -3,7 +3,7 @@ import 'package:new_app/src/authentifications/sign_in/sign_in.dart';
 import 'package:responsive_sizer/responsive_sizer.dart';
 
 class WelcomePage extends StatefulWidget {
-  const WelcomePage({Key? key}) : super(key: key);
+  const WelcomePage({Key? key, required void Function() onDone}) : super(key: key);
 
   @override
   _WelcomePageState createState() => _WelcomePageState();

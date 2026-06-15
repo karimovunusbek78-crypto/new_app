@@ -115,21 +115,6 @@ class _SignInState extends State<SignIn> {
                     return null;
                   },
                 ),
-                SizedBox(height: 1.5.h),
-                Align(
-                  alignment: Alignment.centerRight,
-                  child: GestureDetector(
-                    onTap: () async {
-                      final email = _emailController.text.trim();
-                      if (email.isEmpty) { setState(() => _errorMessage = 'Введите email для сброса пароля'); return; }
-                      try {
-                        await FirebaseAuth.instance.sendPasswordResetEmail(email: email);
-                        if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Письмо для сброса отправлено')));
-                      } catch (_) { setState(() => _errorMessage = 'Ошибка отправки письма'); }
-                    },
-                    child: Text('Забыли пароль?', style: TextStyle(fontSize: 12.sp, fontWeight: FontWeight.w600, color: const Color(0xFF2D1B6E))),
-                  ),
-                ),
                 SizedBox(height: 4.h),
                 SizedBox(
                   width: double.infinity, height: 7.h,
