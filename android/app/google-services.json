@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "572496152073",
+    "project_id": "gravitas-auto",
+    "storage_bucket": "gravitas-auto.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:572496152073:android:e5434e69ffb98b1269dad8",
+        "android_client_info": {
+          "package_name": "com.example.new_app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDbNF89Bj15n7AUDI7C_R7SFS2ff54WudM"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
