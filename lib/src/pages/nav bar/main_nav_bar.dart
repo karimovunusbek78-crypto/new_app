@@ -4,7 +4,7 @@ import 'package:responsive_sizer/responsive_sizer.dart';
 import 'package:new_app/src/pages/favorite/favorite_page.dart';
 import 'package:new_app/src/pages/pages.dart';
 import 'package:new_app/src/pages/profile/profile_page.dart';
-import 'package:new_app/src/pages/add/add_page.dart'; 
+import 'package:new_app/src/pages/add/add_page.dart';
 
 class MainNavBar extends StatefulWidget {
   const MainNavBar({Key? key}) : super(key: key);
@@ -15,20 +15,6 @@ class MainNavBar extends StatefulWidget {
 
 class _MainNavBarState extends State<MainNavBar> {
   int _currentIndex = 0;
-
-  final List<Widget> _pages = [
-    const HomePage(),
-    const SearchPage(),
-    const FavoritePage(),
-    const ProfilePage(),
-  ];
-
-  final List<_NavItemData> _items = const [
-    _NavItemData(icon: Icons.home_rounded,     label: 'Главная'),
-    _NavItemData(icon: Icons.search_rounded,   label: 'Поиск'),
-    _NavItemData(icon: Icons.favorite_rounded, label: 'Избранное'),
-    _NavItemData(icon: Icons.person_rounded,   label: 'Профиль'),
-  ];
 
   void _onTap(int index) {
     HapticFeedback.lightImpact();
@@ -42,6 +28,21 @@ class _MainNavBarState extends State<MainNavBar> {
       MaterialPageRoute(builder: (_) => const AddPage()),
     );
   }
+
+  /// Pages list — HomePage receives a callback to switch to the Search tab.
+  List<Widget> get _pages => [
+        HomePage(onSearchTap: () => _onTap(1)),
+        const SearchPage(),
+        const FavoritePage(),
+        const ProfilePage(),
+      ];
+
+  final List<_NavItemData> _items = const [
+    _NavItemData(icon: Icons.home_rounded,     label: 'Главная'),
+    _NavItemData(icon: Icons.search_rounded,   label: 'Поиск'),
+    _NavItemData(icon: Icons.favorite_rounded, label: 'Избранное'),
+    _NavItemData(icon: Icons.person_rounded,   label: 'Профиль'),
+  ];
 
   @override
   Widget build(BuildContext context) {
@@ -103,12 +104,9 @@ class _BottomNav extends StatelessWidget {
               height: 8.h,
               child: Row(
                 children: [
-                  // Left two items
                   _navItem(items[0], 0),
                   _navItem(items[1], 1),
-                  // Empty space reserved for the center + button
                   SizedBox(width: 18.w),
-                  // Right two items
                   _navItem(items[2], 2),
                   _navItem(items[3], 3),
                 ],
@@ -116,7 +114,6 @@ class _BottomNav extends StatelessWidget {
             ),
           ),
         ),
-        // Center floating "+" button, raised above the nav bar
         Positioned(
           top: -0.7.h,
           child: GestureDetector(
