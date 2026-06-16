@@ -4,3 +4,8 @@ export 'search/search_page.dart';
 export 'profile/profile_page.dart';
 export 'favorite/favorite_page.dart';
 export 'add/add_page.dart';
+export 'home/widgets/autasalon_list.dart';
+export 'home/widgets/featured_cars_list.dart';
+export 'home/widgets/home_banner.dart';
+export 'home/widgets/home_header.dart';
+export 'home/widgets/home_seach_bar.dart';
