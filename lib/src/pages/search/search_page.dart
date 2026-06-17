@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:new_app/src/pages/home/models/car.dart';
+import 'package:new_app/src/pages/home/models/cars_data.dart';
 import 'package:responsive_sizer/responsive_sizer.dart';
+import 'package:new_app/src/pages/home/widgets/featured_cars_list.dart'; // for FeaturedCarCard
 
 class SearchPage extends StatefulWidget {
   const SearchPage({super.key});
@@ -55,7 +58,6 @@ class _SearchPageState extends State<SearchPage> {
   @override
   void initState() {
     super.initState();
-    // Focus the field automatically since the user just tapped into search
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _focusNode.requestFocus();
     });
@@ -68,9 +70,36 @@ class _SearchPageState extends State<SearchPage> {
     super.dispose();
   }
 
+  List<Car> _filterCars(String query) {
+    final q = query.trim().toLowerCase();
+    if (q.isEmpty) return [];
+
+    return allCars.where((car) {
+      return car.name.toLowerCase().contains(q) ||
+          car.year.toLowerCase().contains(q) ||
+          car.bodyType.toLowerCase().contains(q) ||
+          car.color.toLowerCase().contains(q) ||
+          car.location.toLowerCase().contains(q) ||
+          car.fuelType.toLowerCase().contains(q) ||
+          car.engineCapacity.toLowerCase().contains(q) ||
+          car.transmission.toLowerCase().contains(q);
+    }).toList();
+  }
+
+  void _registerSearch(String term) {
+    if (term.trim().isEmpty) return;
+    setState(() {
+      _recentSearches.remove(term);
+      _recentSearches.insert(0, term);
+      if (_recentSearches.length > 8) _recentSearches.removeLast();
+    });
+  }
+
   void _selectTerm(String term) {
     _controller.text = term;
-    setState(() {});
+    _controller.selection =
+        TextSelection.fromPosition(TextPosition(offset: term.length));
+    _registerSearch(term);
   }
 
   void _removeRecent(String term) {
@@ -88,9 +117,7 @@ class _SearchPageState extends State<SearchPage> {
           children: [
             _buildSearchBar(),
             Expanded(
-              child: hasQuery
-                  ? _buildResultsPlaceholder()
-                  : _buildSuggestions(),
+              child: hasQuery ? _buildResults() : _buildSuggestions(),
             ),
           ],
         ),
@@ -129,6 +156,7 @@ class _SearchPageState extends State<SearchPage> {
                       controller: _controller,
                       focusNode: _focusNode,
                       onChanged: (_) => setState(() {}),
+                      onSubmitted: _registerSearch,
                       textInputAction: TextInputAction.search,
                       style: TextStyle(
                           fontSize: 14.sp, color: const Color(0xFF1C1C1E)),
@@ -371,34 +399,45 @@ class _SearchPageState extends State<SearchPage> {
     );
   }
 
-  // ── Заглушка результатов (подключите реальный поиск здесь) ────────────────
-  Widget _buildResultsPlaceholder() {
-    return Center(
-      child: Padding(
-        padding: EdgeInsets.symmetric(horizontal: 10.w),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.search, size: 6.h, color: const Color(0xFFAEAEB2)),
-            SizedBox(height: 2.h),
-            Text(
-              'Ищем «${_controller.text}»',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                fontSize: 14.sp,
-                fontWeight: FontWeight.w600,
-                color: const Color(0xFF1C1C1E),
+  // ── Реальные результаты поиска ───────────────────────────────────────────
+  Widget _buildResults() {
+    final results = _filterCars(_controller.text);
+
+    if (results.isEmpty) {
+      return Center(
+        child: Padding(
+          padding: EdgeInsets.symmetric(horizontal: 10.w),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.search_off, size: 6.h, color: const Color(0xFFAEAEB2)),
+              SizedBox(height: 2.h),
+              Text(
+                'Ничего не найдено по запросу «${_controller.text}»',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 14.sp,
+                  fontWeight: FontWeight.w600,
+                  color: const Color(0xFF1C1C1E),
+                ),
               ),
-            ),
-            SizedBox(height: 1.h),
-            Text(
-              'Подключите ваш источник данных (Firestore/API),\nчтобы показывать здесь реальные результаты',
-              textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 12.sp, color: const Color(0xFF8E8E93)),
-            ),
-          ],
+              SizedBox(height: 1.h),
+              Text(
+                'Попробуйте другой запрос или марку',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 12.sp, color: const Color(0xFF8E8E93)),
+              ),
+            ],
+          ),
         ),
-      ),
+      );
+    }
+
+    return ListView.separated(
+      padding: EdgeInsets.fromLTRB(5.w, 0, 5.w, 3.h),
+      itemCount: results.length,
+      separatorBuilder: (_, __) => SizedBox(height: 1.5.h),
+      itemBuilder: (context, index) => FeaturedCarCard(car: results[index]),
     );
   }
 }

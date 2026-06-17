@@ -9,3 +9,6 @@ export 'home/widgets/featured_cars_list.dart';
 export 'home/widgets/home_banner.dart';
 export 'home/widgets/home_header.dart';
 export 'home/widgets/home_seach_bar.dart';
+export 'home/models/car.dart';
+export 'favorite/providers/favorites_provider.dart';
+export 'home/models/cars_data.dart';
