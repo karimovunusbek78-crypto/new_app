@@ -183,7 +183,7 @@ class FeaturedCarCard extends StatelessWidget {
             onTap: () => context.read<FavoritesProvider>().toggleFavorite(car),
             child: Icon(
               liked ? Icons.favorite : Icons.favorite_border,
-              color: liked ? Colors.black : const Color(0xFF8E8E93),
+              color: liked ? Colors.red : const Color(0xFF8E8E93),
               size: 2.5.h,
             ),
           ),
