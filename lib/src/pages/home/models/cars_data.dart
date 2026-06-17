@@ -19,7 +19,7 @@ final List<Car> allCars = [
     name: 'Audi RS7',
     year: '2024',
     km: '8 300 км',
-    price: '79 000 \$',
+    price: '75000 \$',
     transmission: 'Автомат',
     fuelType: 'Бензин',
     engineCapacity: '4.0 л',

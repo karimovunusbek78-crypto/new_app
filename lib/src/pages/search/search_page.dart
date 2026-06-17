@@ -19,13 +19,16 @@ class _CarCategory {
 
 class _Brand {
   final String name;
-  final Color color;
-  const _Brand(this.name, this.color);
+  final String logoPath;
+  const _Brand(this.name, this.logoPath);
 }
 
 class _SearchPageState extends State<SearchPage> {
   final TextEditingController _controller = TextEditingController();
   final FocusNode _focusNode = FocusNode();
+
+  final TextEditingController _minPriceController = TextEditingController();
+  final TextEditingController _maxPriceController = TextEditingController();
 
   final List<String> _recentSearches = [
     'BMW M4',
@@ -45,14 +48,14 @@ class _SearchPageState extends State<SearchPage> {
   ];
 
   final List<_Brand> _brands = const [
-    _Brand('BMW', Color(0xFF3A6FF8)),
-    _Brand('Audi', Color(0xFFE5384D)),
-    _Brand('Mercedes', Color(0xFF1C1C1E)),
-    _Brand('Toyota', Color(0xFFE53935)),
-    _Brand('Lexus', Color(0xFF8E8E93)),
-    _Brand('Kia', Color(0xFFBB1431)),
-    _Brand('Hyundai', Color(0xFF002C5F)),
-    _Brand('Tesla', Color(0xFFCC0000)),
+    _Brand('BMW', 'assets/images/bmw.png'),
+    _Brand('Audi', 'assets/images/audi.png'),
+    _Brand('Mercedes', 'assets/images/mersedes.png'),
+    _Brand('Toyota', 'assets/images/toyota.png'),
+    _Brand('Lexus', 'assets/images/lexus.png'),
+    _Brand('Kia', 'assets/images/kia.png'),
+    _Brand('Hyundai', 'assets/images/hyundai.png'),
+    _Brand('Tesla', 'assets/images/tesla.png'),
   ];
 
   @override
@@ -67,15 +70,32 @@ class _SearchPageState extends State<SearchPage> {
   void dispose() {
     _controller.dispose();
     _focusNode.dispose();
+    _minPriceController.dispose();
+    _maxPriceController.dispose();
     super.dispose();
   }
 
-  List<Car> _filterCars(String query) {
-    final q = query.trim().toLowerCase();
-    if (q.isEmpty) return [];
+  // Pulls the digits out of strings like "65 000 $" -> 65000
+  double _parsePrice(String price) {
+    final digitsOnly = price.replaceAll(RegExp(r'[^0-9]'), '');
+    if (digitsOnly.isEmpty) return 0;
+    return double.parse(digitsOnly);
+  }
+
+  bool _hasActiveFilter() {
+    return _controller.text.trim().isNotEmpty ||
+        _minPriceController.text.trim().isNotEmpty ||
+        _maxPriceController.text.trim().isNotEmpty;
+  }
+
+  List<Car> _getFilteredCars() {
+    final q = _controller.text.trim().toLowerCase();
+    final minPrice = double.tryParse(_minPriceController.text.trim());
+    final maxPrice = double.tryParse(_maxPriceController.text.trim());
 
     return allCars.where((car) {
-      return car.name.toLowerCase().contains(q) ||
+      final matchesQuery = q.isEmpty ||
+          car.name.toLowerCase().contains(q) ||
           car.year.toLowerCase().contains(q) ||
           car.bodyType.toLowerCase().contains(q) ||
           car.color.toLowerCase().contains(q) ||
@@ -83,6 +103,12 @@ class _SearchPageState extends State<SearchPage> {
           car.fuelType.toLowerCase().contains(q) ||
           car.engineCapacity.toLowerCase().contains(q) ||
           car.transmission.toLowerCase().contains(q);
+
+      final carPrice = _parsePrice(car.price);
+      final matchesMin = minPrice == null || carPrice >= minPrice;
+      final matchesMax = maxPrice == null || carPrice <= maxPrice;
+
+      return matchesQuery && matchesMin && matchesMax;
     }).toList();
   }
 
@@ -106,9 +132,16 @@ class _SearchPageState extends State<SearchPage> {
     setState(() => _recentSearches.remove(term));
   }
 
+  void _clearPriceFilter() {
+    setState(() {
+      _minPriceController.clear();
+      _maxPriceController.clear();
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
-    final hasQuery = _controller.text.trim().isNotEmpty;
+    final hasActiveFilter = _hasActiveFilter();
 
     return Scaffold(
       backgroundColor: const Color(0xFFF5F5F7),
@@ -116,8 +149,9 @@ class _SearchPageState extends State<SearchPage> {
         child: Column(
           children: [
             _buildSearchBar(),
+            _buildPriceFilterRow(),
             Expanded(
-              child: hasQuery ? _buildResults() : _buildSuggestions(),
+              child: hasActiveFilter ? _buildResults() : _buildSuggestions(),
             ),
           ],
         ),
@@ -184,6 +218,126 @@ class _SearchPageState extends State<SearchPage> {
           ),
         ],
       ),
+    );
+  }
+
+  // ── Фильтр по цене (от / до) ────────────────────────────────────────────
+  Widget _buildPriceFilterRow() {
+    final hasPriceFilter = _minPriceController.text.isNotEmpty ||
+        _maxPriceController.text.isNotEmpty;
+
+    return Padding(
+      padding: EdgeInsets.fromLTRB(5.w, 0, 5.w, 1.5.h),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          Expanded(
+            child: _buildPriceField(
+              controller: _minPriceController,
+              label: 'Цена от',
+              hint: '0',
+            ),
+          ),
+          SizedBox(width: 3.w),
+          Expanded(
+            child: _buildPriceField(
+              controller: _maxPriceController,
+              label: 'Цена до',
+              hint: '100 000',
+            ),
+          ),
+          if (hasPriceFilter) ...[
+            SizedBox(width: 2.5.w),
+            GestureDetector(
+              onTap: _clearPriceFilter,
+              child: Container(
+                width: 6.h,
+                height: 6.h,
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  shape: BoxShape.circle,
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.06),
+                      blurRadius: 10,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: Icon(Icons.close,
+                    size: 2.2.h, color: const Color(0xFF8E8E93)),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPriceField({
+    required TextEditingController controller,
+    required String label,
+    required String hint,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: EdgeInsets.only(left: 1.w, bottom: 0.6.h),
+          child: Text(
+            label,
+            style: TextStyle(
+              fontSize: 11.sp,
+              fontWeight: FontWeight.w600,
+              color: const Color(0xFF8E8E93),
+            ),
+          ),
+        ),
+        Container(
+          height: 6.h,
+          padding: EdgeInsets.symmetric(horizontal: 3.5.w),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(3.w),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.06),
+                blurRadius: 10,
+                offset: const Offset(0, 2),
+              ),
+            ],
+          ),
+          child: Row(
+            children: [
+              Icon(Icons.attach_money,
+                  size: 2.h, color: const Color(0xFF3A6FF8)),
+              SizedBox(width: 1.w),
+              Expanded(
+                child: TextField(
+                  controller: controller,
+                  keyboardType: TextInputType.number,
+                  onChanged: (_) => setState(() {}),
+                  style: TextStyle(
+                    fontSize: 14.sp,
+                    fontWeight: FontWeight.w700,
+                    color: const Color(0xFF1C1C1E),
+                  ),
+                  decoration: InputDecoration(
+                    isCollapsed: true,
+                    hintText: hint,
+                    hintStyle: TextStyle(
+                      fontSize: 14.sp,
+                      fontWeight: FontWeight.w400,
+                      color: const Color(0xFFAEAEB2),
+                    ),
+                    border: InputBorder.none,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 
@@ -312,8 +466,8 @@ class _SearchPageState extends State<SearchPage> {
         itemCount: _categories.length,
         gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
           crossAxisCount: 4,
-          mainAxisSpacing: 3.w,
-          crossAxisSpacing: 3.w,
+          mainAxisSpacing: 4.w,
+          crossAxisSpacing: 5.w,
           childAspectRatio: 0.85,
         ),
         itemBuilder: (context, index) {
@@ -371,20 +525,36 @@ class _SearchPageState extends State<SearchPage> {
             child: Column(
               children: [
                 Container(
-                  width: 7.h,
+                  width: 9.h,
                   height: 7.h,
+                  padding: EdgeInsets.all(1.2.h),
                   decoration: BoxDecoration(
-                    color: brand.color.withOpacity(0.12),
+                    color: Colors.white,
                     shape: BoxShape.circle,
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.05),
+                        blurRadius: 8,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
                   ),
-                  alignment: Alignment.center,
-                  child: Text(
-                    brand.name.substring(0, 1),
-                    style: TextStyle(
-                      fontSize: 18.sp,
-                      fontWeight: FontWeight.w700,
-                      color: brand.color,
-                    ),
+                  child: Image.asset(
+                    brand.logoPath,
+                    fit: BoxFit.contain,
+                    errorBuilder: (context, error, stackTrace) {
+                      // Falls back to the first letter if the PNG is missing
+                      return Center(
+                        child: Text(
+                          brand.name.substring(0, 1),
+                          style: TextStyle(
+                            fontSize: 40.sp,
+                            fontWeight: FontWeight.w700,
+                            color: const Color(0xFF1C1C1E),
+                          ),
+                        ),
+                      );
+                    },
                   ),
                 ),
                 SizedBox(height: 0.8.h),
@@ -401,7 +571,7 @@ class _SearchPageState extends State<SearchPage> {
 
   // ── Реальные результаты поиска ───────────────────────────────────────────
   Widget _buildResults() {
-    final results = _filterCars(_controller.text);
+    final results = _getFilteredCars();
 
     if (results.isEmpty) {
       return Center(
@@ -413,7 +583,7 @@ class _SearchPageState extends State<SearchPage> {
               Icon(Icons.search_off, size: 6.h, color: const Color(0xFFAEAEB2)),
               SizedBox(height: 2.h),
               Text(
-                'Ничего не найдено по запросу «${_controller.text}»',
+                'Ничего не найдено',
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   fontSize: 14.sp,
@@ -423,7 +593,7 @@ class _SearchPageState extends State<SearchPage> {
               ),
               SizedBox(height: 1.h),
               Text(
-                'Попробуйте другой запрос или марку',
+                'Попробуйте изменить запрос или диапазон цен',
                 textAlign: TextAlign.center,
                 style: TextStyle(fontSize: 12.sp, color: const Color(0xFF8E8E93)),
               ),
