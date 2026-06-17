@@ -1,5 +1,6 @@
 // lib/providers/favorites_provider.dart
 import 'package:flutter/material.dart';
+import 'package:new_app/src/pages/home/models/car.dart';
 import 'package:new_app/src/pages/pages.dart';
 
 class FavoritesProvider extends ChangeNotifier {

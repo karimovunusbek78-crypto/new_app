@@ -1,5 +1,6 @@
 // lib/pages/favorite_page.dart
 import 'package:flutter/material.dart';
+import 'package:new_app/src/pages/favorite/providers/favorites_provider.dart';
 import 'package:new_app/src/pages/home/widgets/featured_cars_list.dart';
 import 'package:new_app/src/pages/pages.dart';
 import 'package:provider/provider.dart';
