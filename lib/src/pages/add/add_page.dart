@@ -16,7 +16,7 @@ class _AddPageState extends State<AddPage> with TickerProviderStateMixin {
     super.initState();
     _introController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 700),
+      duration: const Duration(milliseconds: 800),
     )..forward();
   }
 
@@ -36,7 +36,7 @@ class _AddPageState extends State<AddPage> with TickerProviderStateMixin {
     // Navigator.push(context, MaterialPageRoute(builder: (_) => const AddCarPage()));
   }
 
-  /// Builds a fade + slide-up entrance for a child, staggered by [order].
+  /// Builds a fade + slide-up + subtle scale entrance, staggered by [order].
   Widget _animatedEntry({required int order, required Widget child}) {
     final start = (order * 0.12).clamp(0.0, 1.0);
     final end = (start + 0.6).clamp(0.0, 1.0);
@@ -48,11 +48,15 @@ class _AddPageState extends State<AddPage> with TickerProviderStateMixin {
     return AnimatedBuilder(
       animation: curved,
       builder: (context, c) {
+        final v = curved.value;
         return Opacity(
-          opacity: curved.value,
+          opacity: v,
           child: Transform.translate(
-            offset: Offset(0, (1 - curved.value) * 3.h),
-            child: c,
+            offset: Offset(0, (1 - v) * 2.6.h),
+            child: Transform.scale(
+              scale: 0.96 + (0.04 * v),
+              child: c,
+            ),
           ),
         );
       },
@@ -148,7 +152,7 @@ class _AddPageState extends State<AddPage> with TickerProviderStateMixin {
   }
 }
 
-// ── Back button (with press feedback) ──────────────────────────────────────────
+// ── Back button (iOS-style circular surface + press feedback) ──────────────────
 
 class _BackButton extends StatefulWidget {
   final VoidCallback onTap;
@@ -170,17 +174,30 @@ class _BackButtonState extends State<_BackButton> {
       onTapCancel: () => setState(() => _down = false),
       behavior: HitTestBehavior.opaque,
       child: AnimatedScale(
-        scale: _down ? 0.88 : 1.0,
+        scale: _down ? 0.9 : 1.0,
         duration: const Duration(milliseconds: 120),
         curve: Curves.easeOut,
-        child: Container(
-          width: 10.w,
-          height: 10.w,
-          alignment: Alignment.centerLeft,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 140),
+          width: 11.w,
+          height: 11.w,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: _down ? const Color(0xFFF4F4F6) : Colors.white,
+            shape: BoxShape.circle,
+            border: Border.all(color: const Color(0xFFEDEDEF), width: 1),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.04),
+                blurRadius: 10,
+                offset: const Offset(0, 4),
+              ),
+            ],
+          ),
           child: Icon(
-            Icons.arrow_back,
+            Icons.arrow_back_ios_new_rounded,
             color: Colors.black,
-            size: 3.2.h,
+            size: 2.2.h,
           ),
         ),
       ),
@@ -233,7 +250,10 @@ class _TypeCardState extends State<_TypeCard> {
           decoration: BoxDecoration(
             color: Colors.white,
             borderRadius: BorderRadius.circular(6.w),
-            border: Border.all(color: const Color(0xFFEFEFF1), width: 1),
+            border: Border.all(
+              color: _down ? widget.accent.withOpacity(0.25) : const Color(0xFFEFEFF1),
+              width: 1,
+            ),
             boxShadow: [
               // Soft neutral lift
               BoxShadow(
@@ -306,18 +326,26 @@ class _TypeCardState extends State<_TypeCard> {
 
               SizedBox(width: 2.5.w),
 
-              // Chevron in a soft circle
-              Container(
-                width: 8.5.w,
-                height: 8.5.w,
-                decoration: const BoxDecoration(
-                  color: Color(0xFFF4F4F6),
-                  shape: BoxShape.circle,
-                ),
-                child: Icon(
-                  Icons.chevron_right,
-                  color: const Color(0xFF8A8A90),
-                  size: 2.9.h,
+              // Chevron — nudges right + tints to accent on press
+              AnimatedSlide(
+                offset: Offset(_down ? 0.18 : 0.0, 0),
+                duration: const Duration(milliseconds: 160),
+                curve: Curves.easeOut,
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 160),
+                  width: 8.5.w,
+                  height: 8.5.w,
+                  decoration: BoxDecoration(
+                    color: _down
+                        ? widget.accent.withOpacity(0.12)
+                        : const Color(0xFFF4F4F6),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(
+                    Icons.chevron_right,
+                    color: _down ? widget.accent : const Color(0xFF8A8A90),
+                    size: 2.9.h,
+                  ),
                 ),
               ),
             ],
