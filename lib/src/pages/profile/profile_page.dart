@@ -13,6 +13,7 @@ class ProfilePage extends StatefulWidget {
 
 class _ProfilePageState extends State<ProfilePage> {
   late TextEditingController _nameController;
+  late TextEditingController _emailController;
   late TextEditingController _phoneController;
   late TextEditingController _telegramController;
 
@@ -22,18 +23,25 @@ class _ProfilePageState extends State<ProfilePage> {
   bool _isEditing = false;
   bool _isSaving = false;
 
+  // Email the user originally had when they entered edit mode —
+  // used to detect whether they actually changed it and to reauthenticate.
+  String _originalEmail = '';
+
   @override
   void initState() {
     super.initState();
     final user = FirebaseAuth.instance.currentUser;
     _nameController = TextEditingController(text: user?.displayName ?? '');
+    _emailController = TextEditingController(text: user?.email ?? '');
     _phoneController = TextEditingController();
     _telegramController = TextEditingController();
+    _originalEmail = user?.email ?? '';
   }
 
   @override
   void dispose() {
     _nameController.dispose();
+    _emailController.dispose();
     _phoneController.dispose();
     _telegramController.dispose();
     super.dispose();
@@ -127,38 +135,209 @@ class _ProfilePageState extends State<ProfilePage> {
     }
   }
 
+  void _showSnack(String text, {bool isError = false}) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(text),
+        backgroundColor: Colors.black,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      ),
+    );
+  }
+
+  /// Asks the user for their current password and reauthenticates them.
+  /// Returns true on success, false if cancelled or failed.
+  Future<bool> _reauthenticate(String currentEmail) async {
+    final passwordController = TextEditingController();
+    bool obscure = true;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (ctx, setDialogState) {
+            return AlertDialog(
+              backgroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+              title: Text(
+                'Подтвердите пароль',
+                style: TextStyle(
+                    fontSize: 16.sp, fontWeight: FontWeight.w700, color: Colors.black),
+              ),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Для изменения email введите текущий пароль',
+                    style: TextStyle(fontSize: 13.sp, color: const Color(0xFF8A8A8E)),
+                  ),
+                  SizedBox(height: 2.h),
+                  TextField(
+                    controller: passwordController,
+                    obscureText: obscure,
+                    autofocus: true,
+                    cursorColor: Colors.black,
+                    style: TextStyle(fontSize: 14.sp, color: Colors.black),
+                    decoration: InputDecoration(
+                      hintText: 'Пароль',
+                      suffixIcon: IconButton(
+                        icon: Icon(
+                          obscure ? Icons.visibility_outlined : Icons.visibility_off_outlined,
+                          color: const Color(0xFF8A8A8E),
+                        ),
+                        onPressed: () => setDialogState(() => obscure = !obscure),
+                      ),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      contentPadding:
+                          EdgeInsets.symmetric(horizontal: 4.w, vertical: 1.5.h),
+                    ),
+                  ),
+                ],
+              ),
+              actions: [
+                Row(children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: () => Navigator.of(ctx).pop(false),
+                      style: OutlinedButton.styleFrom(
+                        padding: EdgeInsets.symmetric(vertical: 1.5.h),
+                        side: const BorderSide(color: Color(0xFFE0E0E0)),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                      child: Text('Отмена', style: TextStyle(color: Colors.black, fontSize: 13.sp)),
+                    ),
+                  ),
+                  SizedBox(width: 2.5.w),
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: () => Navigator.of(ctx).pop(true),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.black,
+                        foregroundColor: Colors.white,
+                        elevation: 0,
+                        padding: EdgeInsets.symmetric(vertical: 1.5.h),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                      child: Text('Подтвердить',
+                          style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13.sp)),
+                    ),
+                  ),
+                ]),
+              ],
+              actionsPadding: EdgeInsets.fromLTRB(4.w, 0, 4.w, 2.h),
+            );
+          },
+        );
+      },
+    );
+
+    if (confirmed != true) return false;
+    if (passwordController.text.isEmpty) return false;
+
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      final credential = EmailAuthProvider.credential(
+        email: currentEmail,
+        password: passwordController.text,
+      );
+      await user?.reauthenticateWithCredential(credential);
+      return true;
+    } on FirebaseAuthException catch (e) {
+      _showSnack(_authErrorMessage(e), isError: true);
+      return false;
+    } catch (e) {
+      _showSnack('Не удалось подтвердить пароль: $e', isError: true);
+      return false;
+    }
+  }
+
+  String _authErrorMessage(FirebaseAuthException e) {
+    switch (e.code) {
+      case 'wrong-password':
+      case 'invalid-credential':
+        return 'Неверный пароль';
+      case 'invalid-email':
+        return 'Некорректный email';
+      case 'email-already-in-use':
+        return 'Этот email уже используется другим аккаунтом';
+      case 'requires-recent-login':
+        return 'Требуется повторный вход. Попробуйте ещё раз';
+      case 'too-many-requests':
+        return 'Слишком много попыток. Попробуйте позже';
+      default:
+        return e.message ?? 'Произошла ошибка (${e.code})';
+    }
+  }
+
   Future<void> _saveProfile() async {
+    final newEmail = _emailController.text.trim();
+
+    if (newEmail.isEmpty || !newEmail.contains('@')) {
+      _showSnack('Введите корректный email', isError: true);
+      return;
+    }
+
     setState(() => _isSaving = true);
     try {
       final user = FirebaseAuth.instance.currentUser;
       await user?.updateDisplayName(_nameController.text.trim());
+
+      final emailChanged = newEmail != _originalEmail;
+      if (emailChanged && user != null) {
+        await _updateEmail(user, newEmail);
+      }
+
       await user?.reload();
       // TODO: persist phone/telegram/avatar URL to your backend (Firestore, etc.)
+
       setState(() {
         _isEditing = false;
         _isSaving = false;
+        _originalEmail = FirebaseAuth.instance.currentUser?.email ?? _originalEmail;
       });
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: const Text('Профиль обновлён'),
-            backgroundColor: Colors.black,
-            behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          ),
-        );
+
+      if (emailChanged) {
+        _showSnack('Профиль обновлён. Подтвердите новый email по ссылке из письма');
+      } else {
+        _showSnack('Профиль обновлён');
       }
     } catch (e) {
       setState(() => _isSaving = false);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Ошибка: $e'),
-            backgroundColor: Colors.black,
-            behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          ),
-        );
+      if (e is FirebaseAuthException) {
+        _showSnack(_authErrorMessage(e), isError: true);
+      } else {
+        _showSnack('Ошибка: $e', isError: true);
+      }
+    }
+  }
+
+  /// Updates the user's email, transparently handling the
+  /// "requires-recent-login" case by prompting for the password once.
+  Future<void> _updateEmail(User user, String newEmail) async {
+    try {
+      // verifyBeforeUpdateEmail sends a confirmation link to the NEW address;
+      // the email only actually changes once the user clicks that link.
+      // This is the Firebase-recommended approach (the old updateEmail()
+      // call is deprecated/blocked on many projects for security reasons).
+      await user.verifyBeforeUpdateEmail(newEmail);
+    } on FirebaseAuthException catch (e) {
+      if (e.code == 'requires-recent-login') {
+        final currentEmail = _originalEmail;
+        final reauthed = await _reauthenticate(currentEmail);
+        if (reauthed) {
+          await user.verifyBeforeUpdateEmail(newEmail);
+        } else {
+          // Revert the field so we don't show a "saved" state that didn't happen.
+          _emailController.text = _originalEmail;
+          rethrow;
+        }
+      } else {
+        rethrow;
       }
     }
   }
@@ -267,7 +446,13 @@ class _ProfilePageState extends State<ProfilePage> {
             Padding(
               padding: EdgeInsets.only(right: 4.w),
               child: TextButton(
-                onPressed: () => setState(() => _isEditing = false),
+                onPressed: () {
+                  setState(() {
+                    _isEditing = false;
+                    // discard unsaved email edits
+                    _emailController.text = _originalEmail;
+                  });
+                },
                 style: TextButton.styleFrom(
                   foregroundColor: const Color(0xFF8A8A8E),
                   padding: EdgeInsets.symmetric(horizontal: 3.w),
@@ -384,6 +569,15 @@ class _ProfilePageState extends State<ProfilePage> {
             ),
             SizedBox(height: 1.5.h),
             _ProfileField(
+              label: 'Email',
+              controller: _emailController,
+              icon: Icons.email_outlined,
+              enabled: _isEditing,
+              hint: 'example@mail.com',
+              keyboardType: TextInputType.emailAddress,
+            ),
+            SizedBox(height: 1.5.h),
+            _ProfileField(
               label: 'Телефон',
               controller: _phoneController,
               icon: Icons.phone_outlined,
@@ -400,6 +594,18 @@ class _ProfilePageState extends State<ProfilePage> {
               hint: '@username',
               keyboardType: TextInputType.text,
             ),
+
+            if (_isEditing && _emailController.text.trim() != _originalEmail)
+              Padding(
+                padding: EdgeInsets.only(top: 1.2.h),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    'На новый email придёт письмо для подтверждения',
+                    style: TextStyle(fontSize: 11.5.sp, color: const Color(0xFF8A8A8E)),
+                  ),
+                ),
+              ),
 
             SizedBox(height: 3.5.h),
 

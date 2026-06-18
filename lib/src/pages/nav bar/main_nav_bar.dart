@@ -16,26 +16,34 @@ class MainNavBar extends StatefulWidget {
 class _MainNavBarState extends State<MainNavBar> {
   int _currentIndex = 0;
 
+  // Pages are built once so their state (scroll position, controllers, etc.)
+  // survives tab switches instead of being thrown away each rebuild.
+  late final List<Widget> _pages;
+
+  @override
+  void initState() {
+    super.initState();
+    _pages = [
+      HomePage(onSearchTap: () => _onTap(1)),
+      const SearchPage(),
+      const FavoritePage(),
+      const ProfilePage(),
+    ];
+  }
+
   void _onTap(int index) {
+    if (index == _currentIndex) return;
     HapticFeedback.lightImpact();
     setState(() => _currentIndex = index);
   }
 
   void _onAddTap() {
-    HapticFeedback.lightImpact();
+    HapticFeedback.mediumImpact();
     Navigator.push(
       context,
       MaterialPageRoute(builder: (_) => const AddPage()),
     );
   }
-
-  /// Pages list — HomePage receives a callback to switch to the Search tab.
-  List<Widget> get _pages => [
-        HomePage(onSearchTap: () => _onTap(1)),
-        const SearchPage(),
-        const FavoritePage(),
-        const ProfilePage(),
-      ];
 
   final List<_NavItemData> _items = const [
     _NavItemData(icon: Icons.home_rounded,     label: 'Главная'),
@@ -48,13 +56,58 @@ class _MainNavBarState extends State<MainNavBar> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.white,
-      body: _pages[_currentIndex],
+      body: _FadeIndexedStack(
+        index: _currentIndex,
+        children: _pages,
+      ),
       bottomNavigationBar: _BottomNav(
         items: _items,
         currentIndex: _currentIndex,
         onTap: _onTap,
         onAddTap: _onAddTap,
       ),
+    );
+  }
+}
+
+// ── Cross-fading page container (keeps every page alive) ────────────────────────
+
+class _FadeIndexedStack extends StatelessWidget {
+  final int index;
+  final List<Widget> children;
+  final Duration duration;
+
+  const _FadeIndexedStack({
+    required this.index,
+    required this.children,
+    this.duration = const Duration(milliseconds: 280),
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      alignment: Alignment.center,
+      children: List.generate(children.length, (i) {
+        final active = i == index;
+        return AnimatedOpacity(
+          opacity: active ? 1 : 0,
+          duration: duration,
+          curve: Curves.easeInOut,
+          // A whisper of movement makes the fade feel intentional, not laggy.
+          child: AnimatedScale(
+            scale: active ? 1 : 0.98,
+            duration: duration,
+            curve: Curves.easeOutCubic,
+            child: IgnorePointer(
+              ignoring: !active,
+              child: TickerMode(
+                enabled: active,
+                child: children[i],
+              ),
+            ),
+          ),
+        );
+      }),
     );
   }
 }
@@ -104,11 +157,11 @@ class _BottomNav extends StatelessWidget {
               height: 8.h,
               child: Row(
                 children: [
-                  _navItem(items[0], 0),
-                  _navItem(items[1], 1),
+                  _NavItem(data: items[0], index: 0, isActive: currentIndex == 0, onTap: onTap),
+                  _NavItem(data: items[1], index: 1, isActive: currentIndex == 1, onTap: onTap),
                   SizedBox(width: 18.w),
-                  _navItem(items[2], 2),
-                  _navItem(items[3], 3),
+                  _NavItem(data: items[2], index: 2, isActive: currentIndex == 2, onTap: onTap),
+                  _NavItem(data: items[3], index: 3, isActive: currentIndex == 3, onTap: onTap),
                 ],
               ),
             ),
@@ -116,77 +169,149 @@ class _BottomNav extends StatelessWidget {
         ),
         Positioned(
           top: -0.7.h,
-          child: GestureDetector(
-            onTap: onAddTap,
-            behavior: HitTestBehavior.opaque,
-            child: Container(
-              width: 6.h,
-              height: 6.h,
-              decoration: BoxDecoration(
-                color: const Color(0xFF2D1B6E),
-                shape: BoxShape.circle,
-                boxShadow: [
-                  BoxShadow(
-                    color: const Color(0xFF2D1B6E).withOpacity(0.35),
-                    blurRadius: 12,
-                    offset: const Offset(0, 4),
-                  ),
-                ],
-              ),
-              child: Icon(
-                Icons.add_rounded,
-                color: Colors.white,
-                size: 3.2.h,
-              ),
-            ),
-          ),
+          child: _AddButton(onTap: onAddTap),
         ),
       ],
     );
   }
+}
 
-  Widget _navItem(_NavItemData item, int index) {
-    final isActive = index == currentIndex;
+// ── Center add button (press feedback + playful spin) ──────────────────────────
+
+class _AddButton extends StatefulWidget {
+  final VoidCallback onTap;
+  const _AddButton({required this.onTap});
+
+  @override
+  State<_AddButton> createState() => _AddButtonState();
+}
+
+class _AddButtonState extends State<_AddButton> {
+  bool _down = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: widget.onTap,
+      onTapDown: (_) => setState(() => _down = true),
+      onTapUp: (_) => setState(() => _down = false),
+      onTapCancel: () => setState(() => _down = false),
+      behavior: HitTestBehavior.opaque,
+      child: AnimatedScale(
+        scale: _down ? 0.88 : 1.0,
+        duration: const Duration(milliseconds: 130),
+        curve: Curves.easeOut,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          width: 6.h,
+          height: 6.h,
+          decoration: BoxDecoration(
+            color: const Color(0xFF2D1B6E),
+            shape: BoxShape.circle,
+            boxShadow: [
+              BoxShadow(
+                color: const Color(0xFF2D1B6E).withOpacity(_down ? 0.5 : 0.35),
+                blurRadius: _down ? 18 : 12,
+                offset: Offset(0, _down ? 6 : 4),
+              ),
+            ],
+          ),
+          child: AnimatedRotation(
+            turns: _down ? 0.125 : 0.0, // 45° spin on press
+            duration: const Duration(milliseconds: 200),
+            curve: Curves.easeOut,
+            child: Icon(
+              Icons.add_rounded,
+              color: Colors.white,
+              size: 3.2.h,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ── Nav item (press feedback + active bounce) ──────────────────────────────────
+
+class _NavItem extends StatefulWidget {
+  final _NavItemData data;
+  final int index;
+  final bool isActive;
+  final ValueChanged<int> onTap;
+
+  const _NavItem({
+    required this.data,
+    required this.index,
+    required this.isActive,
+    required this.onTap,
+  });
+
+  @override
+  State<_NavItem> createState() => _NavItemState();
+}
+
+class _NavItemState extends State<_NavItem> {
+  bool _down = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final isActive = widget.isActive;
     return Expanded(
       child: GestureDetector(
-        onTap: () => onTap(index),
+        onTap: () => widget.onTap(widget.index),
+        onTapDown: (_) => setState(() => _down = true),
+        onTapUp: (_) => setState(() => _down = false),
+        onTapCancel: () => setState(() => _down = false),
         behavior: HitTestBehavior.opaque,
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            AnimatedContainer(
-              duration: const Duration(milliseconds: 200),
-              padding: EdgeInsets.symmetric(
-                horizontal: 3.5.w,
-                vertical: 0.8.h,
+        child: AnimatedScale(
+          scale: _down ? 0.86 : 1.0,
+          duration: const Duration(milliseconds: 120),
+          curve: Curves.easeOut,
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              // Active icon gets a gentle overshoot "pop".
+              AnimatedScale(
+                scale: isActive ? 1.0 : 0.92,
+                duration: const Duration(milliseconds: 260),
+                curve: Curves.easeOutBack,
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 220),
+                  curve: Curves.easeOut,
+                  padding: EdgeInsets.symmetric(
+                    horizontal: 3.5.w,
+                    vertical: 0.8.h,
+                  ),
+                  decoration: BoxDecoration(
+                    color: isActive
+                        ? const Color.fromARGB(255, 5, 2, 16).withOpacity(0.1)
+                        : Colors.transparent,
+                    borderRadius: BorderRadius.circular(1.5.h),
+                  ),
+                  child: Icon(
+                    widget.data.icon,
+                    size: 2.8.h,
+                    color: isActive
+                        ? const Color.fromARGB(255, 5, 2, 19)
+                        : const Color(0xFFBBBBBB),
+                  ),
+                ),
               ),
-              decoration: BoxDecoration(
-                color: isActive
-                    ? const Color.fromARGB(255, 5, 2, 16).withOpacity(0.1)
-                    : Colors.transparent,
-                borderRadius: BorderRadius.circular(1.5.h),
+              SizedBox(height: 0.4.h),
+              AnimatedDefaultTextStyle(
+                duration: const Duration(milliseconds: 220),
+                style: TextStyle(
+                  fontSize: 11.sp,
+                  fontWeight: isActive ? FontWeight.w700 : FontWeight.w500,
+                  color: isActive
+                      ? const Color.fromARGB(255, 6, 3, 19)
+                      : const Color(0xFFBBBBBB),
+                ),
+                child: Text(widget.data.label),
               ),
-              child: Icon(
-                item.icon,
-                size: 2.8.h,
-                color: isActive
-                    ? const Color.fromARGB(255, 5, 2, 19)
-                    : const Color(0xFFBBBBBB),
-              ),
-            ),
-            SizedBox(height: 0.4.h),
-            AnimatedDefaultTextStyle(
-              duration: const Duration(milliseconds: 200),
-              style: TextStyle(
-                fontSize: 11.sp,
-                fontWeight: isActive ? FontWeight.w700 : FontWeight.w500,
-                color: isActive
-                    ? const Color.fromARGB(255, 6, 3, 19)
-                    : const Color(0xFFBBBBBB),
-              ),
-              child: Text(item.label),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
