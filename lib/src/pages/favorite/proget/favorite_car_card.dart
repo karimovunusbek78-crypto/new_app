@@ -2,6 +2,8 @@
 // ── Карточка авто ────────────────────────────────────────────────
 import 'package:flutter/material.dart';
 import 'package:new_app/src/pages/favorite/proget/tag.dart';
+import 'package:new_app/src/pages/favorite/providers/favorites_provider.dart';
+import 'package:new_app/src/pages/home/models/car.dart';
 import 'package:new_app/src/pages/pages.dart';
 import 'package:provider/provider.dart';
 import 'package:responsive_sizer/responsive_sizer.dart';
