@@ -21,3 +21,5 @@ export 'search/widgets/suggestions_view_widget.dart';
 export 'favorite/proget/favorite_car_card.dart';
 export 'favorite/proget/empty_state.dart';
 export 'favorite/proget/tag.dart';
+export 'autoslon/autoslon_page.dart';
+export 'car_sell/car_sell_page.dart';
