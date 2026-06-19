@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:new_app/src/pages/autosalon/autoslon_page.dart';
 import 'package:new_app/src/pages/car_sell/car_sell_page.dart';
+import 'package:new_app/src/pages/pages.dart';
 import 'package:responsive_sizer/responsive_sizer.dart';
 
 class AddPage extends StatefulWidget {

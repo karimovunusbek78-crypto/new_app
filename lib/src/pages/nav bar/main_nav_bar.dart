@@ -1,13 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:responsive_sizer/responsive_sizer.dart';
-import 'package:new_app/src/pages/favorite/favorite_page.dart';
 import 'package:new_app/src/pages/pages.dart';
-import 'package:new_app/src/pages/profile/profile_page.dart';
-import 'package:new_app/src/pages/add/add_page.dart';
+import 'package:responsive_sizer/responsive_sizer.dart';
 
 class MainNavBar extends StatefulWidget {
-  const MainNavBar({Key? key}) : super(key: key);
+  const MainNavBar({super.key});
 
   @override
   State<MainNavBar> createState() => _MainNavBarState();
@@ -39,27 +36,21 @@ class _MainNavBarState extends State<MainNavBar> {
 
   void _onAddTap() {
     HapticFeedback.mediumImpact();
-    Navigator.push(
-      context,
-      MaterialPageRoute(builder: (_) => const AddPage()),
-    );
+    Navigator.push(context, MaterialPageRoute(builder: (_) => const AddPage()));
   }
 
   final List<_NavItemData> _items = const [
-    _NavItemData(icon: Icons.home_rounded,     label: 'Главная'),
-    _NavItemData(icon: Icons.search_rounded,   label: 'Поиск'),
+    _NavItemData(icon: Icons.home_rounded, label: 'Главная'),
+    _NavItemData(icon: Icons.search_rounded, label: 'Поиск'),
     _NavItemData(icon: Icons.favorite_rounded, label: 'Избранное'),
-    _NavItemData(icon: Icons.person_rounded,   label: 'Профиль'),
+    _NavItemData(icon: Icons.person_rounded, label: 'Профиль'),
   ];
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.white,
-      body: _FadeIndexedStack(
-        index: _currentIndex,
-        children: _pages,
-      ),
+      body: _FadeIndexedStack(index: _currentIndex, children: _pages),
       bottomNavigationBar: _BottomNav(
         items: _items,
         currentIndex: _currentIndex,
@@ -100,10 +91,7 @@ class _FadeIndexedStack extends StatelessWidget {
             curve: Curves.easeOutCubic,
             child: IgnorePointer(
               ignoring: !active,
-              child: TickerMode(
-                enabled: active,
-                child: children[i],
-              ),
+              child: TickerMode(enabled: active, child: children[i]),
             ),
           ),
         );
@@ -157,11 +145,31 @@ class _BottomNav extends StatelessWidget {
               height: 8.h,
               child: Row(
                 children: [
-                  _NavItem(data: items[0], index: 0, isActive: currentIndex == 0, onTap: onTap),
-                  _NavItem(data: items[1], index: 1, isActive: currentIndex == 1, onTap: onTap),
+                  _NavItem(
+                    data: items[0],
+                    index: 0,
+                    isActive: currentIndex == 0,
+                    onTap: onTap,
+                  ),
+                  _NavItem(
+                    data: items[1],
+                    index: 1,
+                    isActive: currentIndex == 1,
+                    onTap: onTap,
+                  ),
                   SizedBox(width: 18.w),
-                  _NavItem(data: items[2], index: 2, isActive: currentIndex == 2, onTap: onTap),
-                  _NavItem(data: items[3], index: 3, isActive: currentIndex == 3, onTap: onTap),
+                  _NavItem(
+                    data: items[2],
+                    index: 2,
+                    isActive: currentIndex == 2,
+                    onTap: onTap,
+                  ),
+                  _NavItem(
+                    data: items[3],
+                    index: 3,
+                    isActive: currentIndex == 3,
+                    onTap: onTap,
+                  ),
                 ],
               ),
             ),
@@ -220,11 +228,7 @@ class _AddButtonState extends State<_AddButton> {
             turns: _down ? 0.125 : 0.0, // 45° spin on press
             duration: const Duration(milliseconds: 200),
             curve: Curves.easeOut,
-            child: Icon(
-              Icons.add_rounded,
-              color: Colors.white,
-              size: 3.2.h,
-            ),
+            child: Icon(Icons.add_rounded, color: Colors.white, size: 3.2.h),
           ),
         ),
       ),

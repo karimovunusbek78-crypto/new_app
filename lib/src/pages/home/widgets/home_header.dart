@@ -51,24 +51,27 @@ class HomeHeader extends StatelessWidget {
           ),
           Stack(
             children: [
-              Container(
-                width: 11.w,
-                height: 11.w,
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  shape: BoxShape.circle,
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.08),
-                      blurRadius: 12,
-                      offset: const Offset(0, 2),
-                    ),
-                  ],
-                ),
-                child: Icon(
-                  Icons.notifications_outlined,
-                  color: const Color(0xFF1C1C1E),
-                  size: 2.5.h,
+              GestureDetector(
+                onTap: () {},
+                child: Container(
+                  width: 11.w,
+                  height: 11.w,
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    shape: BoxShape.circle,
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.08),
+                        blurRadius: 12,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
+                  ),
+                  child: Icon(
+                    Icons.notifications_outlined,
+                    color: const Color(0xFF1C1C1E),
+                    size: 2.5.h,
+                  ),
                 ),
               ),
               Positioned(
