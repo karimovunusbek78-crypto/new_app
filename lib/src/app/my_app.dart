@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:new_app/src/pages/favorite/providers/favorites_provider.dart';
+import 'package:new_app/src/pages/car_sell/notifier/car_sell_permission_notifier.dart';
 import 'package:new_app/src/pages/pages.dart';
 import 'package:provider/provider.dart';
 import 'package:new_app/src/authentifications/auth/auth_wrapper.dart';
@@ -13,6 +14,8 @@ class MyApp extends StatelessWidget {
     return MultiProvider(
       providers: [
         ChangeNotifierProvider(create: (_) => FavoritesProvider()),
+        ChangeNotifierProvider(create: (_) => CarSellPermissionNotifier()),   // 1-й
+        ChangeNotifierProvider(create: (_) => AutoslonPermissionNotifier()),  // 2-й
       ],
       child: ResponsiveSizer(
         builder: (context, orientation, screenType) {
