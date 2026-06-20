@@ -1,14 +1,14 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
-import 'package:new_app/src/pages/car_sell/notifier/car_sell_permission_notifier.dart';
-import 'package:provider/provider.dart';
-import 'package:url_launcher/url_launcher.dart';
 import 'package:new_app/src/pages/car_publish/car_publish_page.dart';
+import 'package:new_app/src/pages/car_sell/notifier/car_sell_permission_notifier.dart';
 import 'package:new_app/src/pages/home/models/car.dart';
+import 'package:provider/provider.dart';
 import 'package:responsive_sizer/responsive_sizer.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class CarSellPage extends StatefulWidget {
-  const CarSellPage({Key? key}) : super(key: key);
+  const CarSellPage({super.key});
 
   @override
   State<CarSellPage> createState() => _CarSellPageState();
@@ -35,7 +35,12 @@ class _CarSellPageState extends State<CarSellPage>
   static const _transmissions = ['Механика', 'Автомат', 'Робот', 'Вариатор'];
   static const _fuelTypes = ['Бензин', 'Дизель', 'Газ', 'Электро', 'Гибрид'];
   static const _bodyTypes = [
-    'Седан', 'Хэтчбек', 'Внедорожник', 'Универсал', 'Купе', 'Минивэн'
+    'Седан',
+    'Хэтчбек',
+    'Внедорожник',
+    'Универсал',
+    'Купе',
+    'Минивэн',
   ];
 
   // Accent colors
@@ -71,9 +76,10 @@ class _CarSellPageState extends State<CarSellPage>
       vsync: this,
       duration: const Duration(milliseconds: 600),
     );
-    _fadeAnimation = Tween<double>(begin: 0, end: 1).animate(
-      CurvedAnimation(parent: _fadeController, curve: Curves.easeOut),
-    );
+    _fadeAnimation = Tween<double>(
+      begin: 0,
+      end: 1,
+    ).animate(CurvedAnimation(parent: _fadeController, curve: Curves.easeOut));
 
     // Scale animation (200-1000ms)
     _scaleController = AnimationController(
@@ -89,10 +95,10 @@ class _CarSellPageState extends State<CarSellPage>
       vsync: this,
       duration: const Duration(milliseconds: 900),
     );
-    _slideAnimation = Tween<Offset>(begin: const Offset(0, 0.5), end: Offset.zero)
-        .animate(
-      CurvedAnimation(parent: _slideController, curve: Curves.easeOutCubic),
-    );
+    _slideAnimation =
+        Tween<Offset>(begin: const Offset(0, 0.5), end: Offset.zero).animate(
+          CurvedAnimation(parent: _slideController, curve: Curves.easeOutCubic),
+        );
 
     // Pulse animation (1300ms, repeating)
     _pulseController = AnimationController(
@@ -152,7 +158,9 @@ class _CarSellPageState extends State<CarSellPage>
   // Opens WhatsApp with user's ID pre-filled.
   Future<void> _openWhatsApp() async {
     final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
-    final text = Uri.encodeComponent('Хочу разрешение на публикацию. Мой ID: $uid');
+    final text = Uri.encodeComponent(
+      'Хочу разрешение на публикацию. Мой ID: $uid',
+    );
     final url = Uri.parse('https://wa.me/$_whatsappNumber?text=$text');
     try {
       await launchUrl(url, mode: LaunchMode.externalApplication);
@@ -189,9 +197,9 @@ class _CarSellPageState extends State<CarSellPage>
 
   void _submit() {
     if (!_formKey.currentState!.validate()) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Заполните все поля')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Заполните все поля')));
       return;
     }
 
@@ -266,8 +274,11 @@ class _CarSellPageState extends State<CarSellPage>
                   onTap: () => Navigator.maybePop(context),
                   child: Padding(
                     padding: EdgeInsets.only(left: 5.w, top: 1.h, bottom: 2.h),
-                    child: Icon(Icons.arrow_back,
-                        color: _accentDark, size: 3.2.h),
+                    child: Icon(
+                      Icons.arrow_back,
+                      color: _accentDark,
+                      size: 3.2.h,
+                    ),
                   ),
                 ),
               ),
@@ -514,8 +525,11 @@ class _CarSellPageState extends State<CarSellPage>
                   behavior: HitTestBehavior.opaque,
                   child: Padding(
                     padding: EdgeInsets.symmetric(vertical: 1.h),
-                    child: Icon(Icons.arrow_back,
-                        color: _accentDark, size: 3.2.h),
+                    child: Icon(
+                      Icons.arrow_back,
+                      color: _accentDark,
+                      size: 3.2.h,
+                    ),
                   ),
                 ),
                 SizedBox(height: 1.5.h),
@@ -615,7 +629,8 @@ class _CarSellPageState extends State<CarSellPage>
                             controller: _engineController,
                             hint: '2.0',
                             keyboardType: const TextInputType.numberWithOptions(
-                                decimal: true),
+                              decimal: true,
+                            ),
                           ),
                         ),
                         SizedBox(width: 4.w),
@@ -651,35 +666,35 @@ class _CarSellPageState extends State<CarSellPage>
   // ── Reusable widgets ──────────────────────────────────────────
 
   Widget _section(String title) => Padding(
-        padding: EdgeInsets.only(bottom: 1.6.h, top: 0.5.h),
-        child: Text(
-          title,
-          style: TextStyle(
-            fontSize: 15.sp,
-            fontWeight: FontWeight.w800,
-            color: _accentDark,
-            letterSpacing: -0.3,
-          ),
-        ),
-      );
+    padding: EdgeInsets.only(bottom: 1.6.h, top: 0.5.h),
+    child: Text(
+      title,
+      style: TextStyle(
+        fontSize: 15.sp,
+        fontWeight: FontWeight.w800,
+        color: _accentDark,
+        letterSpacing: -0.3,
+      ),
+    ),
+  );
 
   Widget _label(String text) => Padding(
-        padding: EdgeInsets.only(left: 1.w, bottom: 0.9.h),
-        child: Text(
-          text,
-          style: TextStyle(
-            fontSize: 12.sp,
-            fontWeight: FontWeight.w600,
-            color: const Color(0xFF6A6A70),
-          ),
-        ),
-      );
+    padding: EdgeInsets.only(left: 1.w, bottom: 0.9.h),
+    child: Text(
+      text,
+      style: TextStyle(
+        fontSize: 12.sp,
+        fontWeight: FontWeight.w600,
+        color: const Color(0xFF6A6A70),
+      ),
+    ),
+  );
 
   InputDecoration _decoration({String? hint, IconData? icon}) {
     OutlineInputBorder border(Color c) => OutlineInputBorder(
-          borderRadius: BorderRadius.circular(4.w),
-          borderSide: BorderSide(color: c, width: 1.4),
-        );
+      borderRadius: BorderRadius.circular(4.w),
+      borderSide: BorderSide(color: c, width: 1.4),
+    );
     return InputDecoration(
       hintText: hint,
       hintStyle: TextStyle(
@@ -742,10 +757,12 @@ class _CarSellPageState extends State<CarSellPage>
       children: [
         _label(label),
         DropdownButtonFormField<String>(
-          value: value,
+          initialValue: value,
           isExpanded: true,
-          icon: const Icon(Icons.keyboard_arrow_down_rounded,
-              color: Color(0xFF8A8A90)),
+          icon: const Icon(
+            Icons.keyboard_arrow_down_rounded,
+            color: Color(0xFF8A8A90),
+          ),
           borderRadius: BorderRadius.circular(4.w),
           validator: (v) => v == null ? 'Выберите значение' : null,
           style: TextStyle(
@@ -836,9 +853,10 @@ class _HoverContactCardState extends State<_HoverContactCard>
       vsync: this,
       duration: const Duration(milliseconds: 300),
     );
-    _hoverAnimation = Tween<double>(begin: 0, end: 1).animate(
-      CurvedAnimation(parent: _hoverController, curve: Curves.easeOut),
-    );
+    _hoverAnimation = Tween<double>(
+      begin: 0,
+      end: 1,
+    ).animate(CurvedAnimation(parent: _hoverController, curve: Curves.easeOut));
   }
 
   @override
@@ -869,7 +887,8 @@ class _HoverContactCardState extends State<_HoverContactCard>
               boxShadow: [
                 BoxShadow(
                   color: widget.badgeColor.withOpacity(
-                      0.08 + (_hoverAnimation.value * 0.12)),
+                    0.08 + (_hoverAnimation.value * 0.12),
+                  ),
                   blurRadius: 12 + (_hoverAnimation.value * 8),
                   offset: Offset(0, 4 + (_hoverAnimation.value * 4)),
                 ),
@@ -884,8 +903,11 @@ class _HoverContactCardState extends State<_HoverContactCard>
                     color: widget.badgeColor.withOpacity(0.1),
                     borderRadius: BorderRadius.circular(3.w),
                   ),
-                  child: Icon(widget.icon,
-                      color: widget.badgeColor, size: 2.8.h),
+                  child: Icon(
+                    widget.icon,
+                    color: widget.badgeColor,
+                    size: 2.8.h,
+                  ),
                 ),
                 SizedBox(width: 3.w),
                 Expanded(
@@ -913,8 +935,11 @@ class _HoverContactCardState extends State<_HoverContactCard>
                     ],
                   ),
                 ),
-                Icon(Icons.arrow_forward_ios_rounded,
-                    color: const Color(0xFFCCCCCC), size: 2.h),
+                Icon(
+                  Icons.arrow_forward_ios_rounded,
+                  color: const Color(0xFFCCCCCC),
+                  size: 2.h,
+                ),
               ],
             ),
           ),
@@ -972,10 +997,7 @@ class _AnimatedPressableButtonState extends State<_AnimatedPressableButton>
       onTapUp: (_) => _pressController.reverse(),
       onTapCancel: () => _pressController.reverse(),
       behavior: HitTestBehavior.opaque,
-      child: ScaleTransition(
-        scale: _pressAnimation,
-        child: widget.child,
-      ),
+      child: ScaleTransition(scale: _pressAnimation, child: widget.child),
     );
   }
 }
