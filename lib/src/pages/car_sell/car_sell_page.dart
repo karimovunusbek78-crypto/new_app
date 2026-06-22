@@ -553,7 +553,6 @@ class _CarSellPageState extends State<CarSellPage>
               ],
             ),
           ),
-
           // Scrollable form
           Expanded(
             child: Form(
