@@ -53,4 +53,6 @@ class CarSellPermissionNotifier extends ChangeNotifier {
     notifyListeners();
     await loadPermission();
   }
+
+  void requestPermission() {}
 }
