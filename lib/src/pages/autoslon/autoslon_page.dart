@@ -1,36 +1,14 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:new_app/src/pages/autoslon/permission/publish_permission.dart';
+import 'package:new_app/src/pages/pages.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'package:new_app/src/pages/car_publish/car_publish_page.dart';
 import 'package:responsive_sizer/responsive_sizer.dart';
 
-// ── Provider Notifier ─────────────────────────────────────────
-class AutoslonPermissionNotifier extends ChangeNotifier {
-  bool? _canPublish;
-
-  bool? get canPublish => _canPublish;
-
-  Future<void> loadPermission() async {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) {
-      _canPublish = false;
-      notifyListeners();
-      return;
-    }
-    try {
-      final snap = await FirebaseFirestore.instance
-          .collection('users')
-          .doc(user.uid)
-          .get();
-      _canPublish = snap.data()?['canPublish'] == true;
-    } catch (_) {
-      _canPublish = false;
-    }
-    notifyListeners();
-  }
-}
+// NOTE: AutoslonPermissionNotifier now lives in publish_permissions.dart.
+// Make sure it is registered in your Provider tree, e.g.:
+//   ChangeNotifierProvider(create: (_) => AutoslonPermissionNotifier()),
 
 // ── Main Page ─────────────────────────────────────────────────
 class AutoslonPage extends StatefulWidget {
@@ -48,9 +26,13 @@ class _AutoslonPageState extends State<AutoslonPage>
   static const _accentLight = Color(0xFFF5F3FF);
 
   // Contact details
-  static const _whatsappNumber = '996700123456';
-  static const _phoneNumber = '+996700123456';
-  static const _telegramHandle = '@automarket_support';
+  static const _whatsappNumber = '996555510225';
+  static const _phoneNumber = '+996555510225';
+  static const _telegramHandle = '@fahriddin151515';
+
+  // Permission / auto-open
+  AutoslonPermissionNotifier? _permNotifier;
+  bool _didAutoOpen = false;
 
   // ── Animation Controllers ─────────────────────────────────────
   late final AnimationController _fadeController;
@@ -91,8 +73,8 @@ class _AutoslonPageState extends State<AutoslonPage>
       vsync: this,
       duration: const Duration(milliseconds: 900),
     );
-    _slideAnimation = Tween<Offset>(begin: const Offset(0, 0.5), end: Offset.zero)
-        .animate(
+    _slideAnimation =
+        Tween<Offset>(begin: const Offset(0, 0.5), end: Offset.zero).animate(
       CurvedAnimation(parent: _slideController, curve: Curves.easeOutCubic),
     );
 
@@ -116,16 +98,20 @@ class _AutoslonPageState extends State<AutoslonPage>
       }
     });
 
-    // Load permission
+    // Start listening to the permission document and auto-open on grant.
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) {
-        context.read<AutoslonPermissionNotifier>().loadPermission();
-      }
+      if (!mounted) return;
+      final n = context.read<AutoslonPermissionNotifier>();
+      _permNotifier = n;
+      n.addListener(_onPermissionChanged);
+      n.start();
+      _onPermissionChanged(); // handle the already-granted case
     });
   }
 
   @override
   void dispose() {
+    _permNotifier?.removeListener(_onPermissionChanged);
     _fadeController.dispose();
     _scaleController.dispose();
     _slideController.dispose();
@@ -133,7 +119,33 @@ class _AutoslonPageState extends State<AutoslonPage>
     super.dispose();
   }
 
+  // Auto-open the publish page once when permission becomes granted.
+  // There is no longer a "permission granted" screen shown in between —
+  // as soon as the state flips to granted we jump straight to publishing.
+  void _onPermissionChanged() {
+    if (!mounted) return;
+    final n = _permNotifier;
+    if (n == null) return;
+
+    if (n.state == PublishPermissionState.granted && !_didAutoOpen) {
+      _didAutoOpen = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _goToPublish();
+      });
+    } else if (n.state == PublishPermissionState.none) {
+      // Permission was consumed — allow auto-open again next time it's granted.
+      _didAutoOpen = false;
+    }
+  }
+
+  // Records the permission request (call when a contact button is tapped).
+  void _request() {
+    if (!mounted) return;
+    context.read<AutoslonPermissionNotifier>().requestPermission();
+  }
+
   Future<void> _openWhatsApp() async {
+    _request();
     final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
     final text = Uri.encodeComponent('Хочу разместить автосалон. Мой ID: $uid');
     final url = Uri.parse('https://wa.me/$_whatsappNumber?text=$text');
@@ -149,6 +161,7 @@ class _AutoslonPageState extends State<AutoslonPage>
   }
 
   Future<void> _openTelegram() async {
+    _request();
     final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
     final url = Uri.parse('https://t.me/automarket_support?text=Мой ID: $uid');
     try {
@@ -163,9 +176,16 @@ class _AutoslonPageState extends State<AutoslonPage>
   }
 
   void _goToPublish() {
-    Navigator.push(
+    // Use pushReplacement (not push) so this page is removed from the
+    // navigation stack. Otherwise, if the user backs out of the publish
+    // page, they'd land back here on the granted/loading screen with
+    // _didAutoOpen already true — which never re-navigates and shows an
+    // infinite spinner with no way out.
+    Navigator.pushReplacement(
       context,
-      MaterialPageRoute(builder: (_) => const CarPublishPage()),
+      MaterialPageRoute(
+        builder: (_) => const AutoslonPublishPage(),
+      ),
     );
   }
 
@@ -176,12 +196,18 @@ class _AutoslonPageState extends State<AutoslonPage>
       body: SafeArea(
         child: Consumer<AutoslonPermissionNotifier>(
           builder: (context, notifier, _) {
-            if (notifier.canPublish == null) {
-              return _buildLoadingScreen();
-            } else if (notifier.canPublish == true) {
-              return _buildPublishView();
-            } else {
-              return _buildPermissionView();
+            switch (notifier.state) {
+              case PublishPermissionState.loading:
+                return _buildLoadingScreen();
+              case PublishPermissionState.granted:
+                // No more "Доступ получен" screen — we just show a brief
+                // spinner while _onPermissionChanged() auto-navigates to
+                // the publish page.
+                return _buildLoadingScreen();
+              case PublishPermissionState.waiting:
+                return _buildWaitingView();
+              case PublishPermissionState.none:
+                return _buildPermissionView();
             }
           },
         ),
@@ -207,6 +233,162 @@ class _AutoslonPageState extends State<AutoslonPage>
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  // ── Waiting for approval screen ────────────────────────────────
+  Widget _buildWaitingView() {
+    return FadeTransition(
+      opacity: _fadeAnimation,
+      child: SingleChildScrollView(
+        padding: EdgeInsets.symmetric(vertical: 2.h),
+        child: Column(
+          children: [
+            // Back button
+            Align(
+              alignment: Alignment.centerLeft,
+              child: GestureDetector(
+                onTap: () => Navigator.maybePop(context),
+                child: Padding(
+                  padding: EdgeInsets.only(left: 5.w, top: 1.h, bottom: 2.h),
+                  child:
+                      Icon(Icons.arrow_back, color: _accentDark, size: 3.2.h),
+                ),
+              ),
+            ),
+
+            // Hourglass hero icon (pulsing)
+            ScaleTransition(
+              scale: _scaleAnimation,
+              child: ScaleTransition(
+                scale: _pulseAnimation,
+                child: Container(
+                  width: 25.w,
+                  height: 25.w,
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [Color(0xFFE8E5F7), Color(0xFFF0ECFF)],
+                    ),
+                    borderRadius: BorderRadius.circular(8.w),
+                    boxShadow: [
+                      BoxShadow(
+                        color: _accentBlue.withOpacity(0.15),
+                        blurRadius: 30,
+                        offset: const Offset(0, 10),
+                      ),
+                    ],
+                  ),
+                  child: Icon(Icons.hourglass_top_rounded,
+                      color: _accentBlue, size: 14.w),
+                ),
+              ),
+            ),
+
+            SizedBox(height: 3.h),
+
+            // Title
+            Padding(
+              padding: EdgeInsets.symmetric(horizontal: 5.w),
+              child: Text(
+                'Заявка отправлена',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 24.sp,
+                  fontWeight: FontWeight.w800,
+                  color: _accentDark,
+                  letterSpacing: -0.5,
+                ),
+              ),
+            ),
+
+            SizedBox(height: 1.h),
+
+            // Subtitle
+            Padding(
+              padding: EdgeInsets.symmetric(horizontal: 6.w),
+              child: Text(
+                'Мы получили вашу заявку. Как только мы подтвердим доступ, '
+                'страница размещения откроется автоматически.',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 13.sp,
+                  color: const Color(0xFF9A9AA0),
+                  height: 1.5,
+                ),
+              ),
+            ),
+
+            SizedBox(height: 3.h),
+
+            // Live status row
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                SizedBox(
+                  width: 2.h,
+                  height: 2.h,
+                  child: const CircularProgressIndicator(
+                    strokeWidth: 2.4,
+                    color: _accentBlue,
+                  ),
+                ),
+                SizedBox(width: 2.w),
+                Text(
+                  'Ожидаем подтверждения…',
+                  style: TextStyle(
+                    fontSize: 12.sp,
+                    color: _accentBlue,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+
+            SizedBox(height: 3.h),
+
+            // Follow-up contact options
+            Padding(
+              padding: EdgeInsets.symmetric(horizontal: 5.w),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Хотите ускорить?',
+                    style: TextStyle(
+                      fontSize: 15.sp,
+                      fontWeight: FontWeight.w800,
+                      color: _accentDark,
+                      letterSpacing: -0.3,
+                    ),
+                  ),
+                  SizedBox(height: 1.5.h),
+                  _animatedContactCard(
+                    order: 0,
+                    icon: Icons.chat_bubble_outline_rounded,
+                    title: 'Написать в WhatsApp',
+                    subtitle: _phoneNumber,
+                    onTap: _openWhatsApp,
+                    badgeColor: Colors.green,
+                  ),
+                  SizedBox(height: 1.5.h),
+                  _animatedContactCard(
+                    order: 1,
+                    icon: Icons.send_rounded,
+                    title: 'Написать в Telegram',
+                    subtitle: _telegramHandle,
+                    onTap: _openTelegram,
+                    badgeColor: const Color(0xFF0088CC),
+                  ),
+                ],
+              ),
+            ),
+
+            SizedBox(height: 2.h),
+          ],
+        ),
       ),
     );
   }
@@ -361,6 +543,7 @@ class _AutoslonPageState extends State<AutoslonPage>
                     title: 'Позвонить',
                     subtitle: _phoneNumber,
                     onTap: () async {
+                      _request();
                       final url = Uri.parse('tel:$_phoneNumber');
                       if (await canLaunchUrl(url)) {
                         await launchUrl(url);
@@ -474,202 +657,6 @@ class _AutoslonPageState extends State<AutoslonPage>
       subtitle: subtitle,
     );
   }
-
-  // ── Publish view (when approved) ───────────────────────────────
-  Widget _buildPublishView() {
-    return FadeTransition(
-      opacity: _fadeAnimation,
-      child: Column(
-        children: [
-          // Header
-          FadeTransition(
-            opacity: _fadeAnimation,
-            child: Padding(
-              padding: EdgeInsets.fromLTRB(5.w, 1.h, 5.w, 0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  GestureDetector(
-                    onTap: () => Navigator.maybePop(context),
-                    behavior: HitTestBehavior.opaque,
-                    child: Padding(
-                      padding: EdgeInsets.symmetric(vertical: 1.h),
-                      child: Icon(Icons.arrow_back,
-                          color: _accentDark, size: 3.2.h),
-                    ),
-                  ),
-                  SizedBox(height: 1.5.h),
-                  Text(
-                    'Автосалон',
-                    style: TextStyle(
-                      fontSize: 26.sp,
-                      fontWeight: FontWeight.w800,
-                      color: _accentDark,
-                      letterSpacing: -0.5,
-                    ),
-                  ),
-                  SizedBox(height: 0.6.h),
-                  Text(
-                    'Разместите свой автосалон на платформе.',
-                    style: TextStyle(
-                      fontSize: 13.sp,
-                      color: const Color(0xFF9A9AA0),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-
-          // Content
-          Expanded(
-            child: Center(
-              child: SingleChildScrollView(
-                padding: EdgeInsets.symmetric(horizontal: 6.w, vertical: 4.h),
-                child: ScaleTransition(
-                  scale: _scaleAnimation,
-                  child: SlideTransition(
-                    position: _slideAnimation,
-                    child: FadeTransition(
-                      opacity: _fadeAnimation,
-                      child: _approvedCard(),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _approvedCard() {
-    return Container(
-      padding: EdgeInsets.fromLTRB(6.w, 4.h, 6.w, 3.h),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(7.w),
-        border: Border.all(
-          color: _accentBlue.withOpacity(0.15),
-          width: 1.5,
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: _accentBlue.withOpacity(0.08),
-            blurRadius: 30,
-            offset: const Offset(0, 10),
-          ),
-        ],
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          ScaleTransition(
-            scale: _pulseAnimation,
-            child: Container(
-              width: 20.w,
-              height: 20.w,
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [Color(0xFFE8E5F7), Color(0xFFF0ECFF)],
-                ),
-                shape: BoxShape.circle,
-                boxShadow: [
-                  BoxShadow(
-                    color: _accentBlue.withOpacity(0.2),
-                    blurRadius: 20,
-                    offset: const Offset(0, 8),
-                  ),
-                ],
-              ),
-              child: Icon(Icons.check_circle_rounded,
-                  color: _accentBlue, size: 10.w),
-            ),
-          ),
-          SizedBox(height: 2.5.h),
-          Text(
-            'Доступ получен',
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              fontSize: 19.sp,
-              fontWeight: FontWeight.w800,
-              color: _accentDark,
-              letterSpacing: -0.4,
-            ),
-          ),
-          SizedBox(height: 1.2.h),
-          Text(
-            'У вас есть доступ для размещения автосалона на платформе.',
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              fontSize: 13.sp,
-              color: const Color(0xFF9A9AA0),
-              height: 1.4,
-            ),
-          ),
-          SizedBox(height: 3.5.h),
-          _AnimatedPressableButton(
-            onTap: _goToPublish,
-            child: _publishButton(),
-          ),
-          SizedBox(height: 1.5.h),
-          GestureDetector(
-            onTap: () => Navigator.maybePop(context),
-            behavior: HitTestBehavior.opaque,
-            child: Padding(
-              padding: EdgeInsets.symmetric(vertical: 1.h),
-              child: Text(
-                'Может быть позже',
-                style: TextStyle(
-                  fontSize: 13.sp,
-                  color: const Color(0xFF9A9AA0),
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _publishButton() {
-    return Container(
-      width: double.infinity,
-      padding: EdgeInsets.symmetric(vertical: 2.2.h),
-      decoration: BoxDecoration(
-        color: _accentBlue,
-        borderRadius: BorderRadius.circular(4.w),
-        boxShadow: [
-          BoxShadow(
-            color: _accentBlue.withOpacity(0.25),
-            blurRadius: 18,
-            offset: const Offset(0, 8),
-          ),
-        ],
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(Icons.add_rounded, color: Colors.white, size: 2.4.h),
-          SizedBox(width: 2.w),
-          Text(
-            'Добавить автосалон',
-            style: TextStyle(
-              fontSize: 15.sp,
-              fontWeight: FontWeight.w700,
-              color: Colors.white,
-              letterSpacing: -0.2,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
 }
 
 // ── Hover Contact Card ────────────────────────────────────────
@@ -726,8 +713,7 @@ class _HoverContactCardState extends State<_HoverContactCard>
           onTap: widget.onTap,
           behavior: HitTestBehavior.opaque,
           child: Container(
-            padding:
-                EdgeInsets.symmetric(horizontal: 3.5.w, vertical: 2.h),
+            padding: EdgeInsets.symmetric(horizontal: 3.5.w, vertical: 2.h),
             decoration: BoxDecoration(
               color: const Color(0xFFF5F3FF),
               borderRadius: BorderRadius.circular(4.w),
@@ -737,8 +723,8 @@ class _HoverContactCardState extends State<_HoverContactCard>
               ),
               boxShadow: [
                 BoxShadow(
-                  color: widget.badgeColor.withOpacity(
-                      0.08 + (_hoverAnimation.value * 0.12)),
+                  color: widget.badgeColor
+                      .withOpacity(0.08 + (_hoverAnimation.value * 0.12)),
                   blurRadius: 12 + (_hoverAnimation.value * 8),
                   offset: Offset(0, 4 + (_hoverAnimation.value * 4)),
                 ),
@@ -788,62 +774,6 @@ class _HoverContactCardState extends State<_HoverContactCard>
             ),
           ),
         ),
-      ),
-    );
-  }
-}
-
-// ── Animated Pressable Button ─────────────────────────────────
-class _AnimatedPressableButton extends StatefulWidget {
-  final Widget child;
-  final VoidCallback onTap;
-  final double scale;
-
-  const _AnimatedPressableButton({
-    required this.child,
-    required this.onTap,
-    this.scale = 0.97,
-  });
-
-  @override
-  State<_AnimatedPressableButton> createState() =>
-      _AnimatedPressableButtonState();
-}
-
-class _AnimatedPressableButtonState extends State<_AnimatedPressableButton>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _pressController;
-  late final Animation<double> _pressAnimation;
-
-  @override
-  void initState() {
-    super.initState();
-    _pressController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 150),
-    );
-    _pressAnimation = Tween<double>(begin: 1, end: widget.scale).animate(
-      CurvedAnimation(parent: _pressController, curve: Curves.easeInOut),
-    );
-  }
-
-  @override
-  void dispose() {
-    _pressController.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: widget.onTap,
-      onTapDown: (_) => _pressController.forward(),
-      onTapUp: (_) => _pressController.reverse(),
-      onTapCancel: () => _pressController.reverse(),
-      behavior: HitTestBehavior.opaque,
-      child: ScaleTransition(
-        scale: _pressAnimation,
-        child: widget.child,
       ),
     );
   }

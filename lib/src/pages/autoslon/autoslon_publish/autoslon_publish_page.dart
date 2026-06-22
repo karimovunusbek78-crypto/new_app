@@ -1,16 +1,22 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:new_app/src/pages/autoslon/permission/publish_permission.dart';
 import 'package:responsive_sizer/responsive_sizer.dart';
 
-class CarPublishPage extends StatefulWidget {
-  const CarPublishPage({Key? key}) : super(key: key);
+/// Dedicated publish form for the autosalon flow. This used to be handled
+/// by [CarPublishPage] (car_sell/car_publish/car_publish_page.dart) via a
+/// `publishType` parameter, but that page is now reserved for the car-sell
+/// flow only. This page is its own separate class so the two flows can
+/// evolve independently.
+class AutoslonPublishPage extends StatefulWidget {
+  const AutoslonPublishPage({Key? key}) : super(key: key);
 
   @override
-  State<CarPublishPage> createState() => _CarPublishPageState();
+  State<AutoslonPublishPage> createState() => _AutoslonPublishPageState();
 }
 
-class _CarPublishPageState extends State<CarPublishPage>
+class _AutoslonPublishPageState extends State<AutoslonPublishPage>
     with SingleTickerProviderStateMixin {
   static const _accent = Color(0xFF111111);
   static const _maxPhotos = 10;
@@ -114,19 +120,34 @@ class _CarPublishPageState extends State<CarPublishPage>
         ),
       );
 
-  void _publish() {
+  // The publish button does not publish immediately. It first asks the user to
+  // confirm, and only then consumes the one-time permission and finishes.
+  Future<void> _publish() async {
     if (_photos.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Добавьте хотя бы одно фото')),
       );
       return;
     }
+
+    // Confirmation dialog: "are you sure everything is filled in?"
+    final confirmed = await showPublishConfirmDialog(context);
+    if (!confirmed || !mounted) return;
+
     // TODO: upload _photos / _video (e.g. to Cloudinary or Supabase),
     // then save the listing + media URLs to Firestore.
+
+    // Consume the one-time autosalon permission so the user must request it
+    // again for the next listing.
+    try {
+      await PublishPermissions.consume(PublishType.autoslon);
+    } catch (_) {}
+    if (!mounted) return;
+
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Объявление готово к публикации 🎉')),
+      const SnackBar(content: Text('Объявление опубликовано 🎉')),
     );
-    // Navigator.pop(context); // or go to a success screen
+    Navigator.pop(context);
   }
 
   // ── Entrance animation helper ─────────────────────────────────
@@ -160,34 +181,41 @@ class _CarPublishPageState extends State<CarPublishPage>
       body: SafeArea(
         child: Column(
           children: [
-            // Header
+            // Header — back arrow sits inline to the left of the title,
+            // like a normal app bar, with the subtitle below.
             Padding(
-              padding: EdgeInsets.fromLTRB(5.w, 1.h, 5.w, 0),
+              padding: EdgeInsets.fromLTRB(5.w, 0.5.h, 5.w, 0),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  GestureDetector(
-                    onTap: () => Navigator.maybePop(context),
-                    behavior: HitTestBehavior.opaque,
-                    child: Padding(
-                      padding: EdgeInsets.symmetric(vertical: 1.h),
-                      child: Icon(Icons.arrow_back,
-                          color: Colors.black, size: 3.2.h),
-                    ),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      GestureDetector(
+                        onTap: () => Navigator.maybePop(context),
+                        behavior: HitTestBehavior.opaque,
+                        child: Padding(
+                          padding: EdgeInsets.only(right: 3.w),
+                          child: Icon(Icons.arrow_back,
+                              color: Colors.black, size: 3.2.h),
+                        ),
+                      ),
+                      Expanded(
+                        child: a(Text(
+                          'Публикация',
+                          style: TextStyle(
+                            fontSize: 26.sp,
+                            fontWeight: FontWeight.w800,
+                            color: Colors.black,
+                            letterSpacing: -0.5,
+                          ),
+                        )),
+                      ),
+                    ],
                   ),
-                  SizedBox(height: 1.5.h),
+                  SizedBox(height: 0.5.h),
                   a(Text(
-                    'Публикация',
-                    style: TextStyle(
-                      fontSize: 26.sp,
-                      fontWeight: FontWeight.w800,
-                      color: Colors.black,
-                      letterSpacing: -0.5,
-                    ),
-                  )),
-                  SizedBox(height: 0.6.h),
-                  a(Text(
-                    'Добавьте фото, видео и описание объявления.',
+                    'Добавьте фото, видео и описание автосалона.',
                     style: TextStyle(
                       fontSize: 13.sp,
                       color: const Color(0xFF9A9AA0),

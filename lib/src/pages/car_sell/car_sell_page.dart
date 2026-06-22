@@ -1,11 +1,21 @@
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
-import 'package:new_app/src/pages/car_sell/notifier/car_sell_permission_notifier.dart';
+import 'package:new_app/src/pages/autoslon/permission/publish_permission.dart';
+import 'package:new_app/src/pages/car_sell/car_publish/car_publish_page.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'package:new_app/src/pages/car_publish/car_publish_page.dart';
-import 'package:new_app/src/pages/home/models/car.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:responsive_sizer/responsive_sizer.dart';
+
+// NOTE: CarSellPermissionNotifier now lives in publish_permissions.dart.
+// Make sure it is registered in your Provider tree, e.g.:
+//   ChangeNotifierProvider(create: (_) => CarSellPermissionNotifier()),
+//
+// This page now ONLY handles the access-request flow (none / waiting /
+// loading). Once permission is granted it pushes [CarPublishPage], which
+// owns the actual publish form. Whatever [CarPublishPage] returns (the new
+// [Car], or null if the user backs out) is then passed straight back up by
+// popping this page with the same result — so callers of [CarSellPage]
+// keep working exactly as before.
 
 class CarSellPage extends StatefulWidget {
   const CarSellPage({Key? key}) : super(key: key);
@@ -16,51 +26,29 @@ class CarSellPage extends StatefulWidget {
 
 class _CarSellPageState extends State<CarSellPage>
     with TickerProviderStateMixin {
-  final _formKey = GlobalKey<FormState>();
-
-  // ── Text controllers ──────────────────────────────────────────
-  final _nameController = TextEditingController();
-  final _yearController = TextEditingController();
-  final _kmController = TextEditingController();
-  final _priceController = TextEditingController();
-  final _engineController = TextEditingController();
-  final _colorController = TextEditingController();
-  final _locationController = TextEditingController();
-
-  // ── Dropdown selections ───────────────────────────────────────
-  String? _transmission;
-  String? _fuelType;
-  String? _bodyType;
-
-  static const _transmissions = ['Механика', 'Автомат', 'Робот', 'Вариатор'];
-  static const _fuelTypes = ['Бензин', 'Дизель', 'Газ', 'Электро', 'Гибрид'];
-  static const _bodyTypes = [
-    'Седан', 'Хэтчбек', 'Внедорожник', 'Универсал', 'Купе', 'Минивэн'
-  ];
-
   // Accent colors
   static const _accentDark = Color(0xFF111111);
   static const _accentBlue = Color(0xFF5B4FD9);
-  static const _accentLight = Color(0xFFF5F3FF);
 
   // Your contact details
-  static const _whatsappNumber = '996700123456';
-  static const _phoneNumber = '+996700123456';
-  static const _telegramHandle = '@automarket_support';
+  static const _whatsappNumber = '996555510225';
+  static const _phoneNumber = '+996555510225';
+  static const _telegramHandle = '@fahriddin151515';
 
   // ── Animation Controllers ─────────────────────────────────────
   late final AnimationController _fadeController;
   late final AnimationController _scaleController;
   late final AnimationController _slideController;
   late final AnimationController _pulseController;
-  late final AnimationController _formFadeController;
 
   // Animations
   late Animation<double> _fadeAnimation;
   late Animation<double> _scaleAnimation;
   late Animation<Offset> _slideAnimation;
   late Animation<double> _pulseAnimation;
-  late Animation<double> _formFadeAnimation;
+
+  // Guards against pushing CarPublishPage more than once while granted.
+  bool _navigatedToPublish = false;
 
   @override
   void initState() {
@@ -89,8 +77,8 @@ class _CarSellPageState extends State<CarSellPage>
       vsync: this,
       duration: const Duration(milliseconds: 900),
     );
-    _slideAnimation = Tween<Offset>(begin: const Offset(0, 0.5), end: Offset.zero)
-        .animate(
+    _slideAnimation =
+        Tween<Offset>(begin: const Offset(0, 0.5), end: Offset.zero).animate(
       CurvedAnimation(parent: _slideController, curve: Curves.easeOutCubic),
     );
 
@@ -103,15 +91,6 @@ class _CarSellPageState extends State<CarSellPage>
       CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
     );
 
-    // Form fade (600ms)
-    _formFadeController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 600),
-    );
-    _formFadeAnimation = Tween<double>(begin: 0, end: 1).animate(
-      CurvedAnimation(parent: _formFadeController, curve: Curves.easeOut),
-    );
-
     // Start animations
     _fadeController.forward();
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -120,14 +99,15 @@ class _CarSellPageState extends State<CarSellPage>
         Future.delayed(const Duration(milliseconds: 150), () {
           if (mounted) _slideController.forward();
         });
-        _formFadeController.forward();
       }
     });
 
-    // Load permission
+    // Start listening to the permission document (live updates). When the
+    // admin grants access, the Consumer below moves on to CarPublishPage
+    // on its own.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
-        context.read<CarSellPermissionNotifier>().loadPermission();
+        context.read<CarSellPermissionNotifier>().start();
       }
     });
   }
@@ -138,21 +118,21 @@ class _CarSellPageState extends State<CarSellPage>
     _scaleController.dispose();
     _slideController.dispose();
     _pulseController.dispose();
-    _formFadeController.dispose();
-    _nameController.dispose();
-    _yearController.dispose();
-    _kmController.dispose();
-    _priceController.dispose();
-    _engineController.dispose();
-    _colorController.dispose();
-    _locationController.dispose();
     super.dispose();
+  }
+
+  // Records the permission request (call when a contact button is tapped).
+  void _request() {
+    if (!mounted) return;
+    context.read<CarSellPermissionNotifier>().requestPermission();
   }
 
   // Opens WhatsApp with user's ID pre-filled.
   Future<void> _openWhatsApp() async {
+    _request();
     final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
-    final text = Uri.encodeComponent('Хочу разрешение на публикацию. Мой ID: $uid');
+    final text =
+        Uri.encodeComponent('Хочу разрешение на публикацию. Мой ID: $uid');
     final url = Uri.parse('https://wa.me/$_whatsappNumber?text=$text');
     try {
       await launchUrl(url, mode: LaunchMode.externalApplication);
@@ -167,6 +147,7 @@ class _CarSellPageState extends State<CarSellPage>
 
   // Opens Telegram
   Future<void> _openTelegram() async {
+    _request();
     final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
     final url = Uri.parse('https://t.me/automarket_support?text=Мой ID: $uid');
     try {
@@ -180,36 +161,18 @@ class _CarSellPageState extends State<CarSellPage>
     }
   }
 
-  void _goToPublish() {
-    Navigator.push(
-      context,
+  // Pushes the dedicated publish form once permission is granted, then
+  // forwards whatever it returns back to whoever opened CarSellPage.
+  Future<void> _goToPublishPage() async {
+    if (_navigatedToPublish) return;
+    _navigatedToPublish = true;
+
+    final result = await Navigator.of(context).push(
       MaterialPageRoute(builder: (_) => const CarPublishPage()),
     );
-  }
 
-  void _submit() {
-    if (!_formKey.currentState!.validate()) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Заполните все поля')),
-      );
-      return;
-    }
-
-    final car = Car(
-      id: DateTime.now().millisecondsSinceEpoch.toString(),
-      name: _nameController.text.trim(),
-      year: _yearController.text.trim(),
-      km: _kmController.text.trim(),
-      price: _priceController.text.trim(),
-      transmission: _transmission!,
-      fuelType: _fuelType!,
-      engineCapacity: _engineController.text.trim(),
-      bodyType: _bodyType!,
-      color: _colorController.text.trim(),
-      location: _locationController.text.trim(),
-    );
-
-    Navigator.pop(context, car);
+    if (!mounted) return;
+    Navigator.pop(context, result);
   }
 
   @override
@@ -219,12 +182,17 @@ class _CarSellPageState extends State<CarSellPage>
       body: SafeArea(
         child: Consumer<CarSellPermissionNotifier>(
           builder: (context, notifier, _) {
-            if (notifier.canPublish == null) {
-              return _buildLoadingScreen();
-            } else if (notifier.canPublish == true) {
-              return _buildFormView();
-            } else {
-              return _buildPermissionView();
+            switch (notifier.state) {
+              case PublishPermissionState.loading:
+                return _buildLoadingScreen();
+              case PublishPermissionState.granted:
+                WidgetsBinding.instance
+                    .addPostFrameCallback((_) => _goToPublishPage());
+                return _buildLoadingScreen();
+              case PublishPermissionState.waiting:
+                return _buildWaitingView();
+              case PublishPermissionState.none:
+                return _buildPermissionView();
             }
           },
         ),
@@ -244,6 +212,162 @@ class _CarSellPageState extends State<CarSellPage>
             strokeWidth: 3,
             color: _accentBlue,
           ),
+        ),
+      ),
+    );
+  }
+
+  // ── Waiting for approval screen ────────────────────────────────
+  Widget _buildWaitingView() {
+    return FadeTransition(
+      opacity: _fadeAnimation,
+      child: SingleChildScrollView(
+        padding: EdgeInsets.symmetric(vertical: 2.h),
+        child: Column(
+          children: [
+            // Back button
+            Align(
+              alignment: Alignment.centerLeft,
+              child: GestureDetector(
+                onTap: () => Navigator.maybePop(context),
+                child: Padding(
+                  padding: EdgeInsets.only(left: 5.w, top: 1.h, bottom: 2.h),
+                  child:
+                      Icon(Icons.arrow_back, color: _accentDark, size: 3.2.h),
+                ),
+              ),
+            ),
+
+            // Hourglass hero icon (pulsing)
+            ScaleTransition(
+              scale: _scaleAnimation,
+              child: ScaleTransition(
+                scale: _pulseAnimation,
+                child: Container(
+                  width: 25.w,
+                  height: 25.w,
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [Color(0xFFE8E5F7), Color(0xFFF0ECFF)],
+                    ),
+                    borderRadius: BorderRadius.circular(8.w),
+                    boxShadow: [
+                      BoxShadow(
+                        color: _accentBlue.withOpacity(0.15),
+                        blurRadius: 30,
+                        offset: const Offset(0, 10),
+                      ),
+                    ],
+                  ),
+                  child: Icon(Icons.hourglass_top_rounded,
+                      color: _accentBlue, size: 14.w),
+                ),
+              ),
+            ),
+
+            SizedBox(height: 3.h),
+
+            // Title
+            Padding(
+              padding: EdgeInsets.symmetric(horizontal: 5.w),
+              child: Text(
+                'Заявка отправлена',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 24.sp,
+                  fontWeight: FontWeight.w800,
+                  color: _accentDark,
+                  letterSpacing: -0.5,
+                ),
+              ),
+            ),
+
+            SizedBox(height: 1.h),
+
+            // Subtitle
+            Padding(
+              padding: EdgeInsets.symmetric(horizontal: 6.w),
+              child: Text(
+                'Мы получили вашу заявку. Как только мы подтвердим доступ, '
+                'форма публикации откроется автоматически.',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 13.sp,
+                  color: const Color(0xFF9A9AA0),
+                  height: 1.5,
+                ),
+              ),
+            ),
+
+            SizedBox(height: 3.h),
+
+            // Live status row
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                SizedBox(
+                  width: 2.h,
+                  height: 2.h,
+                  child: const CircularProgressIndicator(
+                    strokeWidth: 2.4,
+                    color: _accentBlue,
+                  ),
+                ),
+                SizedBox(width: 2.w),
+                Text(
+                  'Ожидаем подтверждения…',
+                  style: TextStyle(
+                    fontSize: 12.sp,
+                    color: _accentBlue,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+
+            SizedBox(height: 3.h),
+
+            // Follow-up contact options
+            Padding(
+              padding: EdgeInsets.symmetric(horizontal: 5.w),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Хотите ускорить?',
+                    style: TextStyle(
+                      fontSize: 15.sp,
+                      fontWeight: FontWeight.w800,
+                      color: _accentDark,
+                      letterSpacing: -0.3,
+                    ),
+                  ),
+                  SizedBox(height: 1.5.h),
+                  _animatedContactCard(
+                    order: 0,
+                    icon: Icons.chat_bubble_outline_rounded,
+                    title: 'Написать в WhatsApp',
+                    subtitle: _phoneNumber,
+                    onTap: _openWhatsApp,
+                    badgeColor: Colors.green,
+                  ),
+                  SizedBox(height: 1.5.h),
+                  _animatedContactCard(
+                    order: 1,
+                    icon: Icons.send_rounded,
+                    title: 'Написать в Telegram',
+                    subtitle: _telegramHandle,
+                    onTap: _openTelegram,
+                    badgeColor: const Color(0xFF0088CC),
+                  ),
+                ],
+              ),
+            ),
+
+            SizedBox(height: 2.h),
+          ],
         ),
       ),
     );
@@ -399,6 +523,7 @@ class _CarSellPageState extends State<CarSellPage>
                     title: 'Позвонить',
                     subtitle: _phoneNumber,
                     onTap: () async {
+                      _request();
                       final url = Uri.parse('tel:$_phoneNumber');
                       if (await canLaunchUrl(url)) {
                         await launchUrl(url);
@@ -493,312 +618,6 @@ class _CarSellPageState extends State<CarSellPage>
         icon: icon,
         title: title,
         subtitle: subtitle,
-      ),
-    );
-  }
-
-  // ── Form view (when approved) ─────────────────────────────────
-  Widget _buildFormView() {
-    return FadeTransition(
-      opacity: _formFadeAnimation,
-      child: Column(
-        children: [
-          // Header
-          Padding(
-            padding: EdgeInsets.fromLTRB(5.w, 1.h, 5.w, 0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                GestureDetector(
-                  onTap: () => Navigator.maybePop(context),
-                  behavior: HitTestBehavior.opaque,
-                  child: Padding(
-                    padding: EdgeInsets.symmetric(vertical: 1.h),
-                    child: Icon(Icons.arrow_back,
-                        color: _accentDark, size: 3.2.h),
-                  ),
-                ),
-                SizedBox(height: 1.5.h),
-                Text(
-                  'Продажа авто',
-                  style: TextStyle(
-                    fontSize: 26.sp,
-                    fontWeight: FontWeight.w800,
-                    color: _accentDark,
-                    letterSpacing: -0.5,
-                  ),
-                ),
-                SizedBox(height: 0.6.h),
-                Text(
-                  'Укажите характеристики вашего автомобиля.',
-                  style: TextStyle(
-                    fontSize: 13.sp,
-                    color: const Color(0xFF9A9AA0),
-                  ),
-                ),
-              ],
-            ),
-          ),
-
-          // Scrollable form
-          Expanded(
-            child: Form(
-              key: _formKey,
-              child: SingleChildScrollView(
-                physics: const BouncingScrollPhysics(),
-                padding: EdgeInsets.fromLTRB(5.w, 3.h, 5.w, 2.h),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _section('Основное'),
-                    _textField(
-                      label: 'Марка и модель',
-                      controller: _nameController,
-                      hint: 'Toyota Camry',
-                      icon: Icons.directions_car_outlined,
-                    ),
-                    _textField(
-                      label: 'Цена, \$',
-                      controller: _priceController,
-                      hint: '15 000',
-                      icon: Icons.attach_money,
-                      keyboardType: TextInputType.number,
-                    ),
-                    _section('Характеристики'),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: _textField(
-                            label: 'Год',
-                            controller: _yearController,
-                            hint: '2018',
-                            keyboardType: TextInputType.number,
-                          ),
-                        ),
-                        SizedBox(width: 4.w),
-                        Expanded(
-                          child: _textField(
-                            label: 'Пробег, км',
-                            controller: _kmController,
-                            hint: '85 000',
-                            keyboardType: TextInputType.number,
-                          ),
-                        ),
-                      ],
-                    ),
-                    _dropdownField(
-                      label: 'Коробка передач',
-                      value: _transmission,
-                      items: _transmissions,
-                      icon: Icons.settings_outlined,
-                      onChanged: (v) => setState(() => _transmission = v),
-                    ),
-                    _dropdownField(
-                      label: 'Тип топлива',
-                      value: _fuelType,
-                      items: _fuelTypes,
-                      icon: Icons.local_gas_station_outlined,
-                      onChanged: (v) => setState(() => _fuelType = v),
-                    ),
-                    _dropdownField(
-                      label: 'Тип кузова',
-                      value: _bodyType,
-                      items: _bodyTypes,
-                      icon: Icons.airport_shuttle_outlined,
-                      onChanged: (v) => setState(() => _bodyType = v),
-                    ),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: _textField(
-                            label: 'Объём, л',
-                            controller: _engineController,
-                            hint: '2.0',
-                            keyboardType: const TextInputType.numberWithOptions(
-                                decimal: true),
-                          ),
-                        ),
-                        SizedBox(width: 4.w),
-                        Expanded(
-                          child: _textField(
-                            label: 'Цвет',
-                            controller: _colorController,
-                            hint: 'Чёрный',
-                          ),
-                        ),
-                      ],
-                    ),
-                    _section('Расположение'),
-                    _textField(
-                      label: 'Город',
-                      controller: _locationController,
-                      hint: 'Бишкек',
-                      icon: Icons.location_on_outlined,
-                    ),
-                    SizedBox(height: 2.h),
-                    _submitButton(),
-                    SizedBox(height: 2.h),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // ── Reusable widgets ──────────────────────────────────────────
-
-  Widget _section(String title) => Padding(
-        padding: EdgeInsets.only(bottom: 1.6.h, top: 0.5.h),
-        child: Text(
-          title,
-          style: TextStyle(
-            fontSize: 15.sp,
-            fontWeight: FontWeight.w800,
-            color: _accentDark,
-            letterSpacing: -0.3,
-          ),
-        ),
-      );
-
-  Widget _label(String text) => Padding(
-        padding: EdgeInsets.only(left: 1.w, bottom: 0.9.h),
-        child: Text(
-          text,
-          style: TextStyle(
-            fontSize: 12.sp,
-            fontWeight: FontWeight.w600,
-            color: const Color(0xFF6A6A70),
-          ),
-        ),
-      );
-
-  InputDecoration _decoration({String? hint, IconData? icon}) {
-    OutlineInputBorder border(Color c) => OutlineInputBorder(
-          borderRadius: BorderRadius.circular(4.w),
-          borderSide: BorderSide(color: c, width: 1.4),
-        );
-    return InputDecoration(
-      hintText: hint,
-      hintStyle: TextStyle(
-        fontSize: 13.sp,
-        color: const Color(0xFFB4B4BA),
-        fontWeight: FontWeight.w400,
-      ),
-      filled: true,
-      fillColor: Colors.white,
-      prefixIcon: icon != null
-          ? Icon(icon, color: const Color(0xFF8A8A90), size: 2.4.h)
-          : null,
-      contentPadding: EdgeInsets.symmetric(horizontal: 4.w, vertical: 2.h),
-      enabledBorder: border(const Color(0xFFEAEAEE)),
-      focusedBorder: border(_accentBlue),
-      errorBorder: border(const Color(0xFF555555)),
-      focusedErrorBorder: border(const Color(0xFF555555)),
-      errorStyle: TextStyle(fontSize: 10.sp, color: const Color(0xFF555555)),
-    );
-  }
-
-  Widget _textField({
-    required String label,
-    required TextEditingController controller,
-    String? hint,
-    IconData? icon,
-    TextInputType keyboardType = TextInputType.text,
-  }) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _label(label),
-        TextFormField(
-          controller: controller,
-          keyboardType: keyboardType,
-          cursorColor: _accentBlue,
-          validator: (v) =>
-              (v == null || v.trim().isEmpty) ? 'Заполните поле' : null,
-          style: TextStyle(
-            fontSize: 14.sp,
-            fontWeight: FontWeight.w600,
-            color: _accentDark,
-          ),
-          decoration: _decoration(hint: hint, icon: icon),
-        ),
-        SizedBox(height: 2.h),
-      ],
-    );
-  }
-
-  Widget _dropdownField({
-    required String label,
-    required String? value,
-    required List<String> items,
-    required ValueChanged<String?> onChanged,
-    IconData? icon,
-  }) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _label(label),
-        DropdownButtonFormField<String>(
-          value: value,
-          isExpanded: true,
-          icon: const Icon(Icons.keyboard_arrow_down_rounded,
-              color: Color(0xFF8A8A90)),
-          borderRadius: BorderRadius.circular(4.w),
-          validator: (v) => v == null ? 'Выберите значение' : null,
-          style: TextStyle(
-            fontSize: 14.sp,
-            fontWeight: FontWeight.w600,
-            color: _accentDark,
-          ),
-          hint: Text(
-            'Выберите',
-            style: TextStyle(
-              fontSize: 13.sp,
-              color: const Color(0xFFB4B4BA),
-              fontWeight: FontWeight.w400,
-            ),
-          ),
-          decoration: _decoration(icon: icon),
-          items: items
-              .map((e) => DropdownMenuItem(value: e, child: Text(e)))
-              .toList(),
-          onChanged: onChanged,
-        ),
-        SizedBox(height: 2.h),
-      ],
-    );
-  }
-
-  Widget _submitButton() {
-    return _AnimatedPressableButton(
-      onTap: _submit,
-      child: Container(
-        width: double.infinity,
-        padding: EdgeInsets.symmetric(vertical: 2.2.h),
-        decoration: BoxDecoration(
-          color: _accentBlue,
-          borderRadius: BorderRadius.circular(4.w),
-          boxShadow: [
-            BoxShadow(
-              color: _accentBlue.withOpacity(0.25),
-              blurRadius: 18,
-              offset: const Offset(0, 8),
-            ),
-          ],
-        ),
-        alignment: Alignment.center,
-        child: Text(
-          'Опубликовать объявление',
-          style: TextStyle(
-            fontSize: 15.sp,
-            fontWeight: FontWeight.w700,
-            color: Colors.white,
-            letterSpacing: -0.2,
-          ),
-        ),
       ),
     );
   }
@@ -919,62 +738,6 @@ class _HoverContactCardState extends State<_HoverContactCard>
             ),
           ),
         ),
-      ),
-    );
-  }
-}
-
-// ── Animated Pressable Button ─────────────────────────────────
-class _AnimatedPressableButton extends StatefulWidget {
-  final Widget child;
-  final VoidCallback onTap;
-  final double scale;
-
-  const _AnimatedPressableButton({
-    required this.child,
-    required this.onTap,
-    this.scale = 0.97,
-  });
-
-  @override
-  State<_AnimatedPressableButton> createState() =>
-      _AnimatedPressableButtonState();
-}
-
-class _AnimatedPressableButtonState extends State<_AnimatedPressableButton>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _pressController;
-  late final Animation<double> _pressAnimation;
-
-  @override
-  void initState() {
-    super.initState();
-    _pressController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 150),
-    );
-    _pressAnimation = Tween<double>(begin: 1, end: widget.scale).animate(
-      CurvedAnimation(parent: _pressController, curve: Curves.easeInOut),
-    );
-  }
-
-  @override
-  void dispose() {
-    _pressController.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: widget.onTap,
-      onTapDown: (_) => _pressController.forward(),
-      onTapUp: (_) => _pressController.reverse(),
-      onTapCancel: () => _pressController.reverse(),
-      behavior: HitTestBehavior.opaque,
-      child: ScaleTransition(
-        scale: _pressAnimation,
-        child: widget.child,
       ),
     );
   }
