@@ -44,9 +44,9 @@ class _CarSellPageState extends State<CarSellPage>
   static const _accentLight = Color(0xFFF5F3FF);
 
   // Your contact details
-  static const _whatsappNumber = '996700123456';
-  static const _phoneNumber = '+996700123456';
-  static const _telegramHandle = '@automarket_support';
+  static const _whatsappNumber = '996555510225';
+  static const _phoneNumber = '+996555510225';
+  static const _telegramHandle = '996555510225';
 
   // ── Animation Controllers ─────────────────────────────────────
   late final AnimationController _fadeController;
