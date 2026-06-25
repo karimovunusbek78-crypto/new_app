@@ -46,39 +46,14 @@ class _FavoritePageState extends State<FavoritePage> {
         backgroundColor: Colors.white,
         elevation: 0,
         centerTitle: false,
-        title: Row(
-          children: [
-            Text(
-              'Избранное',
-              style: TextStyle(
-                fontSize: 20.sp,
-                fontWeight: FontWeight.w800,
-                color: const Color(0xFF1C1C1E),
-                letterSpacing: -0.5,
-              ),
-            ),
-            if (favorites.isNotEmpty) ...[
-              SizedBox(width: 2.w),
-              Container(
-                padding: EdgeInsets.symmetric(
-                  horizontal: 2.5.w,
-                  vertical: 0.4.h,
-                ),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFF2F2F7),
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: Text(
-                  '${favorites.length}',
-                  style: TextStyle(
-                    fontSize: 12.sp,
-                    fontWeight: FontWeight.w600,
-                    color: const Color(0xFF8E8E93),
-                  ),
-                ),
-              ),
-            ],
-          ],
+        title: Text(
+          'Избранное',
+          style: TextStyle(
+            fontSize: 20.sp,
+            fontWeight: FontWeight.w800,
+            color: const Color(0xFF1C1C1E),
+            letterSpacing: -0.5, 
+          ),
         ),
         bottom: favorites.isNotEmpty
             ? PreferredSize(
@@ -171,7 +146,7 @@ class _FavoritePageState extends State<FavoritePage> {
               separatorBuilder: (_, _) => SizedBox(height: 1.5.h),
               itemBuilder: (context, index) =>
                   FavoriteCarCard(car: filtered[index]),
-      ),
+            ),
     );
   }
 }

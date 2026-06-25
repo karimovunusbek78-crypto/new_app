@@ -1,11 +1,15 @@
 import 'dart:io';
-import 'package:flutter/material.dart';
+
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:responsive_sizer/responsive_sizer.dart';
+import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:new_app/src/pages/favorite/proget/favorite_car_card.dart';
+import 'package:new_app/src/pages/favorite/providers/favorites_provider.dart';
+import 'package:provider/provider.dart';
+import 'package:responsive_sizer/responsive_sizer.dart';
 
 class ProfilePage extends StatefulWidget {
-  const ProfilePage({Key? key}) : super(key: key);
+  const ProfilePage({super.key});
 
   @override
   State<ProfilePage> createState() => _ProfilePageState();
@@ -23,8 +27,6 @@ class _ProfilePageState extends State<ProfilePage> {
   bool _isEditing = false;
   bool _isSaving = false;
 
-  // Email the user originally had when they entered edit mode —
-  // used to detect whether they actually changed it and to reauthenticate.
   String _originalEmail = '';
 
   @override
@@ -71,18 +73,34 @@ class _ProfilePageState extends State<ProfilePage> {
                   ),
                 ),
                 ListTile(
-                  leading: const Icon(Icons.camera_alt_outlined, color: Colors.black),
-                  title: Text('Сделать фото',
-                      style: TextStyle(fontSize: 14.sp, fontWeight: FontWeight.w600)),
+                  leading: const Icon(
+                    Icons.camera_alt_outlined,
+                    color: Colors.black,
+                  ),
+                  title: Text(
+                    'Сделать фото',
+                    style: TextStyle(
+                      fontSize: 14.sp,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
                   onTap: () {
                     Navigator.pop(ctx);
                     _getImage(ImageSource.camera);
                   },
                 ),
                 ListTile(
-                  leading: const Icon(Icons.photo_outlined, color: Colors.black),
-                  title: Text('Выбрать из галереи',
-                      style: TextStyle(fontSize: 14.sp, fontWeight: FontWeight.w600)),
+                  leading: const Icon(
+                    Icons.photo_outlined,
+                    color: Colors.black,
+                  ),
+                  title: Text(
+                    'Выбрать из галереи',
+                    style: TextStyle(
+                      fontSize: 14.sp,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
                   onTap: () {
                     Navigator.pop(ctx);
                     _getImage(ImageSource.gallery);
@@ -90,12 +108,18 @@ class _ProfilePageState extends State<ProfilePage> {
                 ),
                 if (_avatarFile != null)
                   ListTile(
-                    leading: const Icon(Icons.delete_outline, color: Colors.red),
-                    title: Text('Удалить фото',
-                        style: TextStyle(
-                            fontSize: 14.sp,
-                            fontWeight: FontWeight.w600,
-                            color: Colors.red)),
+                    leading: const Icon(
+                      Icons.delete_outline,
+                      color: Colors.red,
+                    ),
+                    title: Text(
+                      'Удалить фото',
+                      style: TextStyle(
+                        fontSize: 14.sp,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.red,
+                      ),
+                    ),
                     onTap: () {
                       Navigator.pop(ctx);
                       setState(() => _avatarFile = null);
@@ -118,8 +142,6 @@ class _ProfilePageState extends State<ProfilePage> {
       );
       if (picked != null) {
         setState(() => _avatarFile = File(picked.path));
-        // TODO: upload _avatarFile to Firebase Storage / your backend here
-        // and call user.updatePhotoURL(uploadedUrl) once you have a URL.
       }
     } catch (e) {
       if (mounted) {
@@ -128,7 +150,9 @@ class _ProfilePageState extends State<ProfilePage> {
             content: Text('Не удалось выбрать фото: $e'),
             backgroundColor: Colors.black,
             behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
           ),
         );
       }
@@ -147,8 +171,6 @@ class _ProfilePageState extends State<ProfilePage> {
     );
   }
 
-  /// Asks the user for their current password and reauthenticates them.
-  /// Returns true on success, false if cancelled or failed.
   Future<bool> _reauthenticate(String currentEmail) async {
     final passwordController = TextEditingController();
     bool obscure = true;
@@ -160,11 +182,16 @@ class _ProfilePageState extends State<ProfilePage> {
           builder: (ctx, setDialogState) {
             return AlertDialog(
               backgroundColor: Colors.white,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(20),
+              ),
               title: Text(
                 'Подтвердите пароль',
                 style: TextStyle(
-                    fontSize: 16.sp, fontWeight: FontWeight.w700, color: Colors.black),
+                  fontSize: 16.sp,
+                  fontWeight: FontWeight.w700,
+                  color: Colors.black,
+                ),
               ),
               content: Column(
                 mainAxisSize: MainAxisSize.min,
@@ -172,7 +199,10 @@ class _ProfilePageState extends State<ProfilePage> {
                 children: [
                   Text(
                     'Для изменения email введите текущий пароль',
-                    style: TextStyle(fontSize: 13.sp, color: const Color(0xFF8A8A8E)),
+                    style: TextStyle(
+                      fontSize: 13.sp,
+                      color: const Color(0xFF8A8A8E),
+                    ),
                   ),
                   SizedBox(height: 2.h),
                   TextField(
@@ -185,49 +215,71 @@ class _ProfilePageState extends State<ProfilePage> {
                       hintText: 'Пароль',
                       suffixIcon: IconButton(
                         icon: Icon(
-                          obscure ? Icons.visibility_outlined : Icons.visibility_off_outlined,
+                          obscure
+                              ? Icons.visibility_outlined
+                              : Icons.visibility_off_outlined,
                           color: const Color(0xFF8A8A8E),
                         ),
-                        onPressed: () => setDialogState(() => obscure = !obscure),
+                        onPressed: () =>
+                            setDialogState(() => obscure = !obscure),
                       ),
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(12),
                       ),
-                      contentPadding:
-                          EdgeInsets.symmetric(horizontal: 4.w, vertical: 1.5.h),
+                      contentPadding: EdgeInsets.symmetric(
+                        horizontal: 4.w,
+                        vertical: 1.5.h,
+                      ),
                     ),
                   ),
                 ],
               ),
               actions: [
-                Row(children: [
-                  Expanded(
-                    child: OutlinedButton(
-                      onPressed: () => Navigator.of(ctx).pop(false),
-                      style: OutlinedButton.styleFrom(
-                        padding: EdgeInsets.symmetric(vertical: 1.5.h),
-                        side: const BorderSide(color: Color(0xFFE0E0E0)),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: () => Navigator.of(ctx).pop(false),
+                        style: OutlinedButton.styleFrom(
+                          padding: EdgeInsets.symmetric(vertical: 1.5.h),
+                          side: const BorderSide(color: Color(0xFFE0E0E0)),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                        child: Text(
+                          'Отмена',
+                          style: TextStyle(
+                            color: Colors.black,
+                            fontSize: 13.sp,
+                          ),
+                        ),
                       ),
-                      child: Text('Отмена', style: TextStyle(color: Colors.black, fontSize: 13.sp)),
                     ),
-                  ),
-                  SizedBox(width: 2.5.w),
-                  Expanded(
-                    child: ElevatedButton(
-                      onPressed: () => Navigator.of(ctx).pop(true),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.black,
-                        foregroundColor: Colors.white,
-                        elevation: 0,
-                        padding: EdgeInsets.symmetric(vertical: 1.5.h),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    SizedBox(width: 2.5.w),
+                    Expanded(
+                      child: ElevatedButton(
+                        onPressed: () => Navigator.of(ctx).pop(true),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.black,
+                          foregroundColor: Colors.white,
+                          elevation: 0,
+                          padding: EdgeInsets.symmetric(vertical: 1.5.h),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                        child: Text(
+                          'Подтвердить',
+                          style: TextStyle(
+                            fontWeight: FontWeight.w600,
+                            fontSize: 13.sp,
+                          ),
+                        ),
                       ),
-                      child: Text('Подтвердить',
-                          style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13.sp)),
                     ),
-                  ),
-                ]),
+                  ],
+                ),
               ],
               actionsPadding: EdgeInsets.fromLTRB(4.w, 0, 4.w, 2.h),
             );
@@ -293,16 +345,18 @@ class _ProfilePageState extends State<ProfilePage> {
       }
 
       await user?.reload();
-      // TODO: persist phone/telegram/avatar URL to your backend (Firestore, etc.)
 
       setState(() {
         _isEditing = false;
         _isSaving = false;
-        _originalEmail = FirebaseAuth.instance.currentUser?.email ?? _originalEmail;
+        _originalEmail =
+            FirebaseAuth.instance.currentUser?.email ?? _originalEmail;
       });
 
       if (emailChanged) {
-        _showSnack('Профиль обновлён. Подтвердите новый email по ссылке из письма');
+        _showSnack(
+          'Профиль обновлён. Подтвердите новый email по ссылке из письма',
+        );
       } else {
         _showSnack('Профиль обновлён');
       }
@@ -316,14 +370,8 @@ class _ProfilePageState extends State<ProfilePage> {
     }
   }
 
-  /// Updates the user's email, transparently handling the
-  /// "requires-recent-login" case by prompting for the password once.
   Future<void> _updateEmail(User user, String newEmail) async {
     try {
-      // verifyBeforeUpdateEmail sends a confirmation link to the NEW address;
-      // the email only actually changes once the user clicks that link.
-      // This is the Firebase-recommended approach (the old updateEmail()
-      // call is deprecated/blocked on many projects for security reasons).
       await user.verifyBeforeUpdateEmail(newEmail);
     } on FirebaseAuthException catch (e) {
       if (e.code == 'requires-recent-login') {
@@ -332,7 +380,6 @@ class _ProfilePageState extends State<ProfilePage> {
         if (reauthed) {
           await user.verifyBeforeUpdateEmail(newEmail);
         } else {
-          // Revert the field so we don't show a "saved" state that didn't happen.
           _emailController.text = _originalEmail;
           rethrow;
         }
@@ -361,38 +408,48 @@ class _ProfilePageState extends State<ProfilePage> {
           style: TextStyle(fontSize: 13.sp, color: const Color(0xFF8A8A8E)),
         ),
         actions: [
-          Row(children: [
-            Expanded(
-              child: OutlinedButton(
-                onPressed: () => Navigator.of(ctx).pop(false),
-                style: OutlinedButton.styleFrom(
-                  padding: EdgeInsets.symmetric(vertical: 1.5.h),
-                  side: const BorderSide(color: Color(0xFFE0E0E0)),
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12)),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: () => Navigator.of(ctx).pop(false),
+                  style: OutlinedButton.styleFrom(
+                    padding: EdgeInsets.symmetric(vertical: 1.5.h),
+                    side: const BorderSide(color: Color(0xFFE0E0E0)),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  child: Text(
+                    'Отмена',
+                    style: TextStyle(color: Colors.black, fontSize: 13.sp),
+                  ),
                 ),
-                child: Text('Отмена',
-                    style: TextStyle(color: Colors.black, fontSize: 13.sp)),
               ),
-            ),
-            SizedBox(width: 2.5.w),
-            Expanded(
-              child: ElevatedButton(
-                onPressed: () => Navigator.of(ctx).pop(true),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.black,
-                  foregroundColor: Colors.white,
-                  elevation: 0,
-                  padding: EdgeInsets.symmetric(vertical: 1.5.h),
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12)),
-                ),
-                child: Text('Выйти',
+              SizedBox(width: 2.5.w),
+              Expanded(
+                child: ElevatedButton(
+                  onPressed: () => Navigator.of(ctx).pop(true),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.black,
+                    foregroundColor: Colors.white,
+                    elevation: 0,
+                    padding: EdgeInsets.symmetric(vertical: 1.5.h),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  child: Text(
+                    'Выйти',
                     style: TextStyle(
-                        fontWeight: FontWeight.w600, fontSize: 13.sp)),
+                      fontWeight: FontWeight.w600,
+                      fontSize: 13.sp,
+                    ),
+                  ),
+                ),
               ),
-            ),
-          ]),
+            ],
+          ),
         ],
         actionsPadding: EdgeInsets.fromLTRB(4.w, 0, 4.w, 2.h),
       ),
@@ -406,10 +463,13 @@ class _ProfilePageState extends State<ProfilePage> {
   @override
   Widget build(BuildContext context) {
     final user = FirebaseAuth.instance.currentUser;
+    final favorites = context.watch<FavoritesProvider>().favorites;
     final displayName = _nameController.text.trim().isNotEmpty
         ? _nameController.text.trim()
         : 'Без имени';
-    final initials = displayName.isNotEmpty ? displayName[0].toUpperCase() : '?';
+    final initials = displayName.isNotEmpty
+        ? displayName[0].toUpperCase()
+        : '?';
 
     return Scaffold(
       backgroundColor: Colors.white,
@@ -437,9 +497,13 @@ class _ProfilePageState extends State<ProfilePage> {
                   foregroundColor: Colors.black,
                   padding: EdgeInsets.symmetric(horizontal: 3.w),
                 ),
-                child: Text('Изменить',
-                    style: TextStyle(
-                        fontSize: 13.sp, fontWeight: FontWeight.w700)),
+                child: Text(
+                  'Изменить',
+                  style: TextStyle(
+                    fontSize: 13.sp,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
               ),
             ),
           if (_isEditing)
@@ -449,7 +513,6 @@ class _ProfilePageState extends State<ProfilePage> {
                 onPressed: () {
                   setState(() {
                     _isEditing = false;
-                    // discard unsaved email edits
                     _emailController.text = _originalEmail;
                   });
                 },
@@ -457,9 +520,13 @@ class _ProfilePageState extends State<ProfilePage> {
                   foregroundColor: const Color(0xFF8A8A8E),
                   padding: EdgeInsets.symmetric(horizontal: 3.w),
                 ),
-                child: Text('Отмена',
-                    style: TextStyle(
-                        fontSize: 13.sp, fontWeight: FontWeight.w600)),
+                child: Text(
+                  'Отмена',
+                  style: TextStyle(
+                    fontSize: 13.sp,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
               ),
             ),
         ],
@@ -525,8 +592,11 @@ class _ProfilePageState extends State<ProfilePage> {
                             shape: BoxShape.circle,
                             border: Border.all(color: Colors.black, width: 2),
                           ),
-                          child: Icon(Icons.camera_alt_rounded,
-                              color: Colors.black, size: 1.8.h),
+                          child: Icon(
+                            Icons.camera_alt_rounded,
+                            color: Colors.black,
+                            size: 1.8.h,
+                          ),
                         ),
                       ),
                   ],
@@ -548,10 +618,7 @@ class _ProfilePageState extends State<ProfilePage> {
             SizedBox(height: 0.3.h),
             Text(
               user?.email ?? 'Нет email',
-              style: TextStyle(
-                fontSize: 13.sp,
-                color: const Color(0xFF8A8A8E),
-              ),
+              style: TextStyle(fontSize: 13.sp, color: const Color(0xFF8A8A8E)),
             ),
 
             SizedBox(height: 3.5.h),
@@ -595,6 +662,36 @@ class _ProfilePageState extends State<ProfilePage> {
               keyboardType: TextInputType.text,
             ),
 
+            SizedBox(height: 3.h),
+            // ── Кнопка выйти ─────────────────────────────────────────────────
+            SizedBox(
+              width: double.infinity,
+              height: 6.5.h,
+              child: OutlinedButton.icon(
+                onPressed: _logout,
+                icon: Icon(
+                  Icons.logout_rounded,
+                  size: 2.2.h,
+                  color: Colors.black,
+                ),
+                label: Text(
+                  'Выйти из аккаунта',
+                  style: TextStyle(
+                    fontSize: 14.sp,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.black,
+                  ),
+                ),
+                style: OutlinedButton.styleFrom(
+                  side: const BorderSide(color: Colors.black, width: 1.2),
+                  elevation: 0,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(3.5.w),
+                  ),
+                ),
+              ),
+            ),
+
             if (_isEditing && _emailController.text.trim() != _originalEmail)
               Padding(
                 padding: EdgeInsets.only(top: 1.2.h),
@@ -602,7 +699,10 @@ class _ProfilePageState extends State<ProfilePage> {
                   alignment: Alignment.centerLeft,
                   child: Text(
                     'На новый email придёт письмо для подтверждения',
-                    style: TextStyle(fontSize: 11.5.sp, color: const Color(0xFF8A8A8E)),
+                    style: TextStyle(
+                      fontSize: 11.5.sp,
+                      color: const Color(0xFF8A8A8E),
+                    ),
                   ),
                 ),
               ),
@@ -621,47 +721,67 @@ class _ProfilePageState extends State<ProfilePage> {
                     foregroundColor: Colors.white,
                     elevation: 0,
                     shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(3.5.w)),
+                      borderRadius: BorderRadius.circular(3.5.w),
+                    ),
                   ),
                   child: _isSaving
                       ? SizedBox(
                           width: 2.5.h,
                           height: 2.5.h,
                           child: const CircularProgressIndicator(
-                              color: Colors.white, strokeWidth: 2),
+                            color: Colors.white,
+                            strokeWidth: 2,
+                          ),
                         )
                       : Text(
                           'Сохранить',
                           style: TextStyle(
-                              fontSize: 15.sp, fontWeight: FontWeight.w700),
+                            fontSize: 15.sp,
+                            fontWeight: FontWeight.w700,
+                          ),
                         ),
                 ),
               ),
 
             if (_isEditing) SizedBox(height: 1.5.h),
 
-            // ── Кнопка выйти ─────────────────────────────────────────────────
-            SizedBox(
-              width: double.infinity,
-              height: 6.5.h,
-              child: OutlinedButton.icon(
-                onPressed: _logout,
-                icon: Icon(Icons.logout_rounded, size: 2.2.h, color: Colors.black),
-                label: Text(
-                  'Выйти из аккаунта',
-                  style: TextStyle(
-                      fontSize: 14.sp,
-                      fontWeight: FontWeight.w600,
-                      color: Colors.black),
-                ),
-                style: OutlinedButton.styleFrom(
-                  side: const BorderSide(color: Colors.black, width: 1.2),
-                  elevation: 0,
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(3.5.w)),
-                ),
+            // ── Избранное ─────────────────────────────────────────────────────
+            if (favorites.isNotEmpty) ...[
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const _SectionLabel(label: 'Избранное'),
+                  Container(
+                    padding: EdgeInsets.symmetric(
+                      horizontal: 2.5.w,
+                      vertical: 0.4.h,
+                    ),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF2F2F7),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Text(
+                      '${favorites.length}',
+                      style: TextStyle(
+                        fontSize: 11.sp,
+                        fontWeight: FontWeight.w600,
+                        color: const Color(0xFF8E8E93),
+                      ),
+                    ),
+                  ),
+                ],
               ),
-            ),
+              SizedBox(height: 1.2.h),
+              ListView.separated(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                itemCount: favorites.length,
+                separatorBuilder: (_, _) => SizedBox(height: 1.5.h),
+                itemBuilder: (context, index) =>
+                    FavoriteCarCard(car: favorites[index]),
+              ),
+              SizedBox(height: 3.5.h),
+            ],
 
             SizedBox(height: 3.h),
           ],
@@ -741,10 +861,7 @@ class _ProfileField extends StatelessWidget {
             color: const Color(0xFF8A8A8E),
           ),
           hintText: hint,
-          hintStyle: TextStyle(
-            fontSize: 13.sp,
-            color: const Color(0xFFB0B0B0),
-          ),
+          hintStyle: TextStyle(fontSize: 13.sp, color: const Color(0xFFB0B0B0)),
           prefixIcon: Icon(
             icon,
             color: enabled ? Colors.black : const Color(0xFFB0B0B0),
@@ -767,8 +884,10 @@ class _ProfileField extends StatelessWidget {
             borderSide: BorderSide.none,
           ),
           filled: false,
-          contentPadding:
-              EdgeInsets.symmetric(horizontal: 4.w, vertical: 1.8.h),
+          contentPadding: EdgeInsets.symmetric(
+            horizontal: 4.w,
+            vertical: 1.8.h,
+          ),
         ),
       ),
     );
