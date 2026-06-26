@@ -3,8 +3,7 @@ import 'dart:io';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:new_app/src/pages/favorite/proget/favorite_car_card.dart';
-import 'package:new_app/src/pages/favorite/providers/favorites_provider.dart';
+import 'package:new_app/src/pages/pages.dart';
 import 'package:provider/provider.dart';
 import 'package:responsive_sizer/responsive_sizer.dart';
 
