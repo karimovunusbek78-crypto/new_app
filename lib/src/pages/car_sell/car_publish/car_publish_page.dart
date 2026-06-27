@@ -1,4 +1,6 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 import 'package:new_app/src/pages/autoslon/permission/publish_permission.dart';
 import 'package:new_app/src/pages/home/models/car.dart';
@@ -6,8 +8,9 @@ import 'package:responsive_sizer/responsive_sizer.dart';
 
 /// Dedicated publish form for the car-sell flow. [CarSellPage] only handles
 /// the access-request flow now; once permission is granted it pushes this
-/// page, which owns the actual form, the publish confirmation, and consuming
-/// the one-time permission. On success it pops with the new [Car].
+/// page, which owns the actual form (including photos/video), the publish
+/// confirmation, and consuming the one-time permission. On success it pops
+/// with the new [Car].
 class CarPublishPage extends StatefulWidget {
   const CarPublishPage({Key? key}) : super(key: key);
 
@@ -27,17 +30,38 @@ class _CarPublishPageState extends State<CarPublishPage>
   final _engineController = TextEditingController();
   final _colorController = TextEditingController();
   final _locationController = TextEditingController();
+  final _ownersController = TextEditingController();
+  final _descController = TextEditingController();
+  final _changesController = TextEditingController();
+  final _phoneController = TextEditingController();
 
   // ── Dropdown selections ───────────────────────────────────────
   String? _transmission;
   String? _fuelType;
   String? _bodyType;
+  String? _driveType;
+  String? _condition;
+
+  // ── Price / contact options ────────────────────────────────────
+  bool _priceNegotiable = false;
+  bool _contactWhatsapp = false;
+  bool _contactTelegram = false;
 
   static const _transmissions = ['Механика', 'Автомат', 'Робот', 'Вариатор'];
   static const _fuelTypes = ['Бензин', 'Дизель', 'Газ', 'Электро', 'Гибрид'];
   static const _bodyTypes = [
     'Седан', 'Хэтчбек', 'Внедорожник', 'Универсал', 'Купе', 'Минивэн'
   ];
+  static const _driveTypes = ['Передний', 'Задний', 'Полный'];
+  static const _conditions = [
+    'Новый', 'Б/у', 'После аварии', 'Требует ремонта'
+  ];
+
+  // ── Photos / video ─────────────────────────────────────────────
+  static const _maxPhotos = 4;
+  final ImagePicker _picker = ImagePicker();
+  final List<XFile> _photos = [];
+  XFile? _video;
 
   // Accent color — publish actions are black, matching the autoslon flow.
   static const _accent = Color(0xFF111111);
@@ -64,6 +88,10 @@ class _CarPublishPageState extends State<CarPublishPage>
     _engineController.dispose();
     _colorController.dispose();
     _locationController.dispose();
+    _ownersController.dispose();
+    _descController.dispose();
+    _changesController.dispose();
+    _phoneController.dispose();
     super.dispose();
   }
 
@@ -88,10 +116,101 @@ class _CarPublishPageState extends State<CarPublishPage>
     );
   }
 
+  // ── Media pickers (same UX as the autoslon publish page) ──────
+  void _maxReached() => ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Максимум 4 фото')),
+      );
+
+  Future<void> _addPhotoFromCamera() async {
+    if (_photos.length >= _maxPhotos) return _maxReached();
+    try {
+      final x =
+          await _picker.pickImage(source: ImageSource.camera, imageQuality: 70);
+      if (x != null) setState(() => _photos.add(x));
+    } catch (_) {}
+  }
+
+  Future<void> _addPhotosFromGallery() async {
+    final remaining = _maxPhotos - _photos.length;
+    if (remaining <= 0) return _maxReached();
+    try {
+      final list = await _picker.pickMultiImage(imageQuality: 70);
+      if (list.isNotEmpty) {
+        setState(() => _photos.addAll(list.take(remaining)));
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _pickVideo(ImageSource source) async {
+    try {
+      final x = await _picker.pickVideo(
+          source: source, maxDuration: const Duration(minutes: 2));
+      if (x != null) setState(() => _video = x);
+    } catch (_) {}
+  }
+
+  void _removePhoto(int i) => setState(() => _photos.removeAt(i));
+  void _removeVideo() => setState(() => _video = null);
+
+  void _showPhotoSheet() => showModalBottomSheet(
+        context: context,
+        backgroundColor: Colors.transparent,
+        builder: (_) => _SourceSheet(
+          title: 'Добавить фото',
+          cameraLabel: 'Сделать фото',
+          galleryLabel: 'Выбрать из галереи',
+          onCamera: () {
+            Navigator.pop(context);
+            _addPhotoFromCamera();
+          },
+          onGallery: () {
+            Navigator.pop(context);
+            _addPhotosFromGallery();
+          },
+        ),
+      );
+
+  void _showVideoSheet() => showModalBottomSheet(
+        context: context,
+        backgroundColor: Colors.transparent,
+        builder: (_) => _SourceSheet(
+          title: 'Добавить видео',
+          cameraLabel: 'Снять видео',
+          galleryLabel: 'Выбрать из галереи',
+          onCamera: () {
+            Navigator.pop(context);
+            _pickVideo(ImageSource.camera);
+          },
+          onGallery: () {
+            Navigator.pop(context);
+            _pickVideo(ImageSource.gallery);
+          },
+        ),
+      );
+
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Заполните все поля')),
+      );
+      return;
+    }
+    if (_driveType == null || _condition == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Заполните все поля')),
+      );
+      return;
+    }
+    if (_photos.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Добавьте хотя бы одно фото')),
+      );
+      return;
+    }
+    if (!_contactWhatsapp && !_contactTelegram) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+            content: Text('Выберите хотя бы один способ связи: WhatsApp или Telegram')),
       );
       return;
     }
@@ -115,7 +234,21 @@ class _CarPublishPageState extends State<CarPublishPage>
       bodyType: _bodyType!,
       color: _colorController.text.trim(),
       location: _locationController.text.trim(),
+      ownersCount: _ownersController.text.trim(),
+      description: _descController.text.trim(),
+      driveType: _driveType!,
+      condition: _condition!,
+      photoPaths: _photos.map((x) => x.path).toList(),
+      videoPath: _video?.path,
+      priceNegotiable: _priceNegotiable,
+      changesDescription: _changesController.text.trim(),
+      phone: _phoneController.text.trim(),
+      contactWhatsapp: _contactWhatsapp,
+      contactTelegram: _contactTelegram,
     );
+
+    // TODO: upload _photos / _video (e.g. to Cloudinary or Supabase) and
+    // store the resulting URLs instead of local paths, if needed elsewhere.
 
     // Consume the one-time permission, then return the new car. After this the
     // user must request permission again for the next listing.
@@ -189,6 +322,14 @@ class _CarPublishPageState extends State<CarPublishPage>
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
+                      a(_sectionTitle('Фотографии', '${_photos.length}/$_maxPhotos')),
+                      SizedBox(height: 1.5.h),
+                      a(_photoWrap()),
+                      SizedBox(height: 3.h),
+                      a(_sectionTitle('Видео', _video == null ? '' : '1')),
+                      SizedBox(height: 1.5.h),
+                      a(_videoArea()),
+                      SizedBox(height: 3.h),
                       a(_section('Основное')),
                       a(_textField(
                         label: 'Марка и модель',
@@ -203,6 +344,7 @@ class _CarPublishPageState extends State<CarPublishPage>
                         icon: Icons.attach_money,
                         keyboardType: TextInputType.number,
                       )),
+                      a(_negotiableSwitch()),
                       a(_section('Характеристики')),
                       a(Row(
                         children: [
@@ -246,6 +388,13 @@ class _CarPublishPageState extends State<CarPublishPage>
                         icon: Icons.airport_shuttle_outlined,
                         onChanged: (v) => setState(() => _bodyType = v),
                       )),
+                      a(_dropdownField(
+                        label: 'Привод',
+                        value: _driveType,
+                        items: _driveTypes,
+                        icon: Icons.all_inclusive_outlined,
+                        onChanged: (v) => setState(() => _driveType = v),
+                      )),
                       a(Row(
                         children: [
                           Expanded(
@@ -268,6 +417,23 @@ class _CarPublishPageState extends State<CarPublishPage>
                           ),
                         ],
                       )),
+                      a(_section('Состояние и история')),
+                      a(_dropdownField(
+                        label: 'Состояние',
+                        value: _condition,
+                        items: _conditions,
+                        icon: Icons.health_and_safety_outlined,
+                        onChanged: (v) => setState(() => _condition = v),
+                      )),
+                      a(_textField(
+                        label: 'Количество владельцев',
+                        controller: _ownersController,
+                        hint: '1',
+                        icon: Icons.groups_outlined,
+                        keyboardType: TextInputType.number,
+                      )),
+                      a(_descField()),
+                      a(_changesField()),
                       a(_section('Расположение')),
                       a(_textField(
                         label: 'Город',
@@ -275,12 +441,340 @@ class _CarPublishPageState extends State<CarPublishPage>
                         hint: 'Бишкек',
                         icon: Icons.location_on_outlined,
                       )),
+                      a(_section('Контакты')),
+                      a(_textField(
+                        label: 'Номер телефона',
+                        controller: _phoneController,
+                        hint: '+996 700 000 000',
+                        icon: Icons.phone_outlined,
+                        keyboardType: TextInputType.phone,
+                      )),
+                      a(_contactMethodPicker()),
                       SizedBox(height: 2.h),
                       a(_submitButton()),
                       SizedBox(height: 2.h),
                     ],
                   ),
                 ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ── Photos / video widgets ─────────────────────────────────────
+
+  Widget _sectionTitle(String title, String trailing) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(title,
+            style: TextStyle(
+                fontSize: 16.sp,
+                fontWeight: FontWeight.w800,
+                color: _accent,
+                letterSpacing: -0.3)),
+        if (trailing.isNotEmpty)
+          Text(trailing,
+              style: TextStyle(
+                  fontSize: 12.sp,
+                  color: const Color(0xFFB4B4BA),
+                  fontWeight: FontWeight.w600)),
+      ],
+    );
+  }
+
+  Widget _photoWrap() {
+    final tile = 26.w;
+    return Wrap(
+      spacing: 3.w,
+      runSpacing: 3.w,
+      children: [
+        if (_photos.length < _maxPhotos)
+          _PressableScale(
+            onTap: _showPhotoSheet,
+            child: Container(
+              width: tile,
+              height: tile,
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(4.w),
+                border: Border.all(color: const Color(0xFFE2E2E6), width: 1.4),
+              ),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.add_a_photo_outlined, color: _accent, size: 3.2.h),
+                  SizedBox(height: 0.8.h),
+                  Text('Добавить',
+                      style: TextStyle(
+                          fontSize: 10.sp,
+                          color: const Color(0xFF8A8A90),
+                          fontWeight: FontWeight.w600)),
+                ],
+              ),
+            ),
+          ),
+        for (int i = 0; i < _photos.length; i++) _photoThumb(i, tile),
+      ],
+    );
+  }
+
+  Widget _photoThumb(int i, double tile) {
+    return Stack(
+      children: [
+        ClipRRect(
+          borderRadius: BorderRadius.circular(4.w),
+          child: Image.file(File(_photos[i].path),
+              width: tile, height: tile, fit: BoxFit.cover),
+        ),
+        Positioned(
+          top: 1.w,
+          right: 1.w,
+          child: GestureDetector(
+            onTap: () => _removePhoto(i),
+            child: Container(
+              padding: EdgeInsets.all(0.6.w),
+              decoration: BoxDecoration(
+                  color: Colors.black.withOpacity(0.6),
+                  shape: BoxShape.circle),
+              child: Icon(Icons.close, color: Colors.white, size: 1.8.h),
+            ),
+          ),
+        ),
+        if (i == 0)
+          Positioned(
+            left: 1.w,
+            bottom: 1.w,
+            child: Container(
+              padding: EdgeInsets.symmetric(horizontal: 2.w, vertical: 0.3.h),
+              decoration: BoxDecoration(
+                  color: Colors.black.withOpacity(0.6),
+                  borderRadius: BorderRadius.circular(2.w)),
+              child: Text('Обложка',
+                  style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 9.sp,
+                      fontWeight: FontWeight.w600)),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _videoArea() {
+    if (_video == null) {
+      return _PressableScale(
+        onTap: _showVideoSheet,
+        child: Container(
+          width: double.infinity,
+          padding: EdgeInsets.symmetric(vertical: 3.h),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(4.w),
+            border: Border.all(color: const Color(0xFFE2E2E6), width: 1.4),
+          ),
+          child: Column(
+            children: [
+              Icon(Icons.videocam_outlined, color: _accent, size: 3.6.h),
+              SizedBox(height: 1.h),
+              Text('Добавить видео',
+                  style: TextStyle(
+                      fontSize: 13.sp,
+                      color: _accent,
+                      fontWeight: FontWeight.w700)),
+              SizedBox(height: 0.4.h),
+              Text('Снять на камеру или выбрать из галереи',
+                  style: TextStyle(
+                      fontSize: 11.sp, color: const Color(0xFF9A9AA0))),
+            ],
+          ),
+        ),
+      );
+    }
+    return Container(
+      padding: EdgeInsets.all(3.w),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(4.w),
+        border: Border.all(color: const Color(0xFFE2E2E6), width: 1.4),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 14.w,
+            height: 14.w,
+            decoration: BoxDecoration(
+                color: _accent, borderRadius: BorderRadius.circular(3.w)),
+            child:
+                Icon(Icons.play_arrow_rounded, color: Colors.white, size: 4.h),
+          ),
+          SizedBox(width: 3.w),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Видео добавлено',
+                    style: TextStyle(
+                        fontSize: 13.sp,
+                        fontWeight: FontWeight.w700,
+                        color: _accent)),
+                SizedBox(height: 0.4.h),
+                Text(_video!.name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                        fontSize: 11.sp, color: const Color(0xFF9A9AA0))),
+              ],
+            ),
+          ),
+          GestureDetector(
+            onTap: _removeVideo,
+            child: Icon(Icons.delete_outline,
+                color: const Color(0xFF8A8A90), size: 2.6.h),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── Price negotiable toggle ─────────────────────────────────────
+
+  Widget _negotiableSwitch() {
+    return Padding(
+      padding: EdgeInsets.only(bottom: 2.h),
+      child: GestureDetector(
+        onTap: () => setState(() => _priceNegotiable = !_priceNegotiable),
+        behavior: HitTestBehavior.opaque,
+        child: Container(
+          padding: EdgeInsets.symmetric(horizontal: 4.w, vertical: 1.6.h),
+          decoration: BoxDecoration(
+            color: const Color(0xFFF2F2F4),
+            borderRadius: BorderRadius.circular(4.w),
+          ),
+          child: Row(
+            children: [
+              Icon(Icons.sell_outlined, color: _accent, size: 2.4.h),
+              SizedBox(width: 3.w),
+              Expanded(
+                child: Text(
+                  'Цена обсуждается (торг)',
+                  style: TextStyle(
+                    fontSize: 13.sp,
+                    fontWeight: FontWeight.w600,
+                    color: _accent,
+                  ),
+                ),
+              ),
+              Switch.adaptive(
+                value: _priceNegotiable,
+                activeColor: _accent,
+                onChanged: (v) => setState(() => _priceNegotiable = v),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ── Changes / improvements field ────────────────────────────────
+
+  Widget _changesField() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _label('Что было изменено / отремонтировано (необязательно)'),
+        TextFormField(
+          controller: _changesController,
+          maxLines: 4,
+          maxLength: 500,
+          cursorColor: _accent,
+          style: TextStyle(
+            fontSize: 14.sp,
+            fontWeight: FontWeight.w500,
+            color: _accent,
+            height: 1.4,
+          ),
+          decoration: _decoration(
+              hint: 'Например: заменена подвеска, новые шины, покраска крыла...'),
+        ),
+        SizedBox(height: 2.h),
+      ],
+    );
+  }
+
+  // ── Contact method picker (WhatsApp / Telegram) ─────────────────
+
+  Widget _contactMethodPicker() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _label('Как с вами можно связаться'),
+        Row(
+          children: [
+            Expanded(
+              child: _contactChip(
+                label: 'WhatsApp',
+                icon: Icons.chat_outlined,
+                selected: _contactWhatsapp,
+                onTap: () =>
+                    setState(() => _contactWhatsapp = !_contactWhatsapp),
+              ),
+            ),
+            SizedBox(width: 3.w),
+            Expanded(
+              child: _contactChip(
+                label: 'Telegram',
+                icon: Icons.send_outlined,
+                selected: _contactTelegram,
+                onTap: () =>
+                    setState(() => _contactTelegram = !_contactTelegram),
+              ),
+            ),
+          ],
+        ),
+        SizedBox(height: 2.h),
+      ],
+    );
+  }
+
+  Widget _contactChip({
+    required String label,
+    required IconData icon,
+    required bool selected,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        padding: EdgeInsets.symmetric(vertical: 1.6.h),
+        decoration: BoxDecoration(
+          color: selected ? _accent : const Color(0xFFF2F2F4),
+          borderRadius: BorderRadius.circular(4.w),
+          border: Border.all(
+            color: selected ? _accent : const Color(0xFFEAEAEE),
+            width: 1.4,
+          ),
+        ),
+        alignment: Alignment.center,
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(icon,
+                color: selected ? Colors.white : const Color(0xFF8A8A90),
+                size: 2.2.h),
+            SizedBox(width: 2.w),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 13.sp,
+                fontWeight: FontWeight.w700,
+                color: selected ? Colors.white : _accent,
               ),
             ),
           ],
@@ -371,6 +865,32 @@ class _CarPublishPageState extends State<CarPublishPage>
     );
   }
 
+  Widget _descField() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _label('Описание'),
+        TextFormField(
+          controller: _descController,
+          maxLines: 5,
+          maxLength: 1000,
+          cursorColor: _accent,
+          validator: (v) =>
+              (v == null || v.trim().isEmpty) ? 'Заполните поле' : null,
+          style: TextStyle(
+            fontSize: 14.sp,
+            fontWeight: FontWeight.w500,
+            color: _accent,
+            height: 1.4,
+          ),
+          decoration: _decoration(
+              hint: 'Расскажите о состоянии, истории обслуживания, комплектации...'),
+        ),
+        SizedBox(height: 2.h),
+      ],
+    );
+  }
+
   Widget _dropdownField({
     required String label,
     required String? value,
@@ -445,7 +965,133 @@ class _CarPublishPageState extends State<CarPublishPage>
   }
 }
 
-// ── Animated Pressable Button ─────────────────────────────────
+// ── Bottom sheet: camera / gallery (same as autoslon publish page) ──────
+class _SourceSheet extends StatelessWidget {
+  final String title, cameraLabel, galleryLabel;
+  final VoidCallback onCamera, onGallery;
+  const _SourceSheet({
+    required this.title,
+    required this.cameraLabel,
+    required this.galleryLabel,
+    required this.onCamera,
+    required this.onGallery,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(6.w)),
+      ),
+      child: SafeArea(
+        top: false,
+        child: Padding(
+          padding: EdgeInsets.fromLTRB(4.w, 1.5.h, 4.w, 2.h),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 12.w,
+                height: 0.6.h,
+                decoration: BoxDecoration(
+                    color: const Color(0xFFD8D8DE),
+                    borderRadius: BorderRadius.circular(2.h)),
+              ),
+              SizedBox(height: 2.h),
+              Text(title,
+                  style: TextStyle(
+                      fontSize: 16.sp,
+                      fontWeight: FontWeight.w800,
+                      color: Colors.black)),
+              SizedBox(height: 2.h),
+              _option(Icons.photo_camera_outlined, cameraLabel, onCamera),
+              SizedBox(height: 1.4.h),
+              _option(Icons.photo_library_outlined, galleryLabel, onGallery),
+              SizedBox(height: 0.6.h),
+              GestureDetector(
+                onTap: () => Navigator.pop(context),
+                behavior: HitTestBehavior.opaque,
+                child: Padding(
+                  padding: EdgeInsets.all(1.5.h),
+                  child: Text('Отмена',
+                      style: TextStyle(
+                          fontSize: 14.sp,
+                          color: const Color(0xFF9A9AA0),
+                          fontWeight: FontWeight.w600)),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _option(IconData icon, String label, VoidCallback onTap) {
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: Container(
+        width: double.infinity,
+        padding: EdgeInsets.symmetric(horizontal: 4.w, vertical: 2.h),
+        decoration: BoxDecoration(
+          color: const Color(0xFFF2F2F4),
+          borderRadius: BorderRadius.circular(4.w),
+        ),
+        child: Row(
+          children: [
+            Icon(icon, color: const Color(0xFF111111), size: 2.8.h),
+            SizedBox(width: 3.w),
+            Text(label,
+                style: TextStyle(
+                    fontSize: 14.sp,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.black)),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ── Press-to-scale wrapper (for photo/video tiles) ───────────────
+class _PressableScale extends StatefulWidget {
+  final Widget child;
+  final VoidCallback onTap;
+  final double scale;
+  const _PressableScale({
+    required this.child,
+    required this.onTap,
+    this.scale = 0.97,
+  });
+
+  @override
+  State<_PressableScale> createState() => _PressableScaleState();
+}
+
+class _PressableScaleState extends State<_PressableScale> {
+  bool _down = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: widget.onTap,
+      onTapDown: (_) => setState(() => _down = true),
+      onTapUp: (_) => setState(() => _down = false),
+      onTapCancel: () => setState(() => _down = false),
+      behavior: HitTestBehavior.opaque,
+      child: AnimatedScale(
+        scale: _down ? widget.scale : 1.0,
+        duration: const Duration(milliseconds: 120),
+        curve: Curves.easeOut,
+        child: widget.child,
+      ),
+    );
+  }
+}
+
+// ── Animated Pressable Button (submit) ────────────────────────
 class _AnimatedPressableButton extends StatefulWidget {
   final Widget child;
   final VoidCallback onTap;
