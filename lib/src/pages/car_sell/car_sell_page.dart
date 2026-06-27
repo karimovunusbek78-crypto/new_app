@@ -50,6 +50,16 @@ class _CarSellPageState extends State<CarSellPage>
   // Guards against pushing CarPublishPage more than once while granted.
   bool _navigatedToPublish = false;
 
+  // Per-card entrance controllers, created ONCE up front (not on every
+  // build) and disposed in dispose(). Indexed by the `order` passed to
+  // _animatedContactCard. We never have more than 3 contact cards visible
+  // at a time (waiting view uses 2, permission view uses 3), so 3 is enough
+  // — _animatedContactCard reuses controller[order] regardless of which
+  // view is showing.
+  static const _contactCardCount = 3;
+  late final List<AnimationController> _contactCardControllers;
+  late final List<Animation<double>> _contactCardAnimations;
+
   @override
   void initState() {
     super.initState();
@@ -91,6 +101,25 @@ class _CarSellPageState extends State<CarSellPage>
       CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
     );
 
+    // Contact-card entrance controllers — created once here, reused by
+    // _animatedContactCard on every build instead of being recreated.
+    _contactCardControllers = List.generate(
+      _contactCardCount,
+      (_) => AnimationController(
+        vsync: this,
+        duration: const Duration(milliseconds: 800),
+      ),
+    );
+    _contactCardAnimations = List.generate(_contactCardCount, (order) {
+      final startDelay = (order * 100).toDouble();
+      final start = (startDelay / 1000).clamp(0.0, 0.6);
+      final end = (start + 0.35).clamp(0.0, 1.0);
+      return CurvedAnimation(
+        parent: _contactCardControllers[order],
+        curve: Interval(start, end, curve: Curves.easeOutCubic),
+      );
+    });
+
     // Start animations
     _fadeController.forward();
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -99,6 +128,9 @@ class _CarSellPageState extends State<CarSellPage>
         Future.delayed(const Duration(milliseconds: 150), () {
           if (mounted) _slideController.forward();
         });
+        for (final c in _contactCardControllers) {
+          c.forward();
+        }
       }
     });
 
@@ -118,6 +150,9 @@ class _CarSellPageState extends State<CarSellPage>
     _scaleController.dispose();
     _slideController.dispose();
     _pulseController.dispose();
+    for (final c in _contactCardControllers) {
+      c.dispose();
+    }
     super.dispose();
   }
 
@@ -579,6 +614,10 @@ class _CarSellPageState extends State<CarSellPage>
   }
 
   // ── Animated contact card ─────────────────────────────────────
+  // Reuses the pre-created controller/animation for this `order` instead of
+  // creating a new AnimationController on every build (that was the source
+  // of the ticker leak — controllers were created here but never stored or
+  // disposed).
   Widget _animatedContactCard({
     required int order,
     required IconData icon,
@@ -587,21 +626,7 @@ class _CarSellPageState extends State<CarSellPage>
     required VoidCallback onTap,
     Color badgeColor = _accentBlue,
   }) {
-    final startDelay = (order * 100).toDouble();
-    final start = (startDelay / 1000).clamp(0.0, 0.6);
-    final end = (start + 0.35).clamp(0.0, 1.0);
-
-    final animationController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 800),
-    );
-
-    final animation = CurvedAnimation(
-      parent: animationController,
-      curve: Interval(start, end, curve: Curves.easeOutCubic),
-    );
-
-    Future.microtask(() => animationController.forward());
+    final animation = _contactCardAnimations[order];
 
     return AnimatedBuilder(
       animation: animation,

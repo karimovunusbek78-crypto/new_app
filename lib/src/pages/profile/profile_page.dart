@@ -1,8 +1,12 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:responsive_sizer/responsive_sizer.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_storage/firebase_storage.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:new_app/src/pages/profile/service/profile_history_service.dart';
+import 'package:responsive_sizer/responsive_sizer.dart';
+
 
 class ProfilePage extends StatefulWidget {
   const ProfilePage({Key? key}) : super(key: key);
@@ -18,10 +22,20 @@ class _ProfilePageState extends State<ProfilePage> {
   late TextEditingController _telegramController;
 
   final ImagePicker _picker = ImagePicker();
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final FirebaseStorage _storage = FirebaseStorage.instance;
+  final ProfileHistoryService _historyService = ProfileHistoryService();
+
   File? _avatarFile;
+  // URL of the avatar already stored in Firestore/Storage, used as a
+  // fallback display when the user hasn't picked a new local file.
+  String? _avatarUrl;
 
   bool _isEditing = false;
   bool _isSaving = false;
+  bool _isLoadingProfile = true;
+  // True while a freshly picked photo is being uploaded to Storage.
+  bool _isUploadingAvatar = false;
 
   // Email the user originally had when they entered edit mode —
   // used to detect whether they actually changed it and to reauthenticate.
@@ -36,6 +50,7 @@ class _ProfilePageState extends State<ProfilePage> {
     _phoneController = TextEditingController();
     _telegramController = TextEditingController();
     _originalEmail = user?.email ?? '';
+    _loadProfileFromFirestore();
   }
 
   @override
@@ -45,6 +60,32 @@ class _ProfilePageState extends State<ProfilePage> {
     _phoneController.dispose();
     _telegramController.dispose();
     super.dispose();
+  }
+
+  /// Loads the extra profile fields (phone, telegram, avatarUrl) that live
+  /// in the `users` Firestore collection, keyed by the auth uid.
+  Future<void> _loadProfileFromFirestore() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      if (mounted) setState(() => _isLoadingProfile = false);
+      return;
+    }
+    try {
+      final doc = await _firestore.collection('users').doc(user.uid).get();
+      if (doc.exists) {
+        final data = doc.data() ?? {};
+        _phoneController.text = (data['phone'] ?? '') as String;
+        _telegramController.text = (data['telegram'] ?? '') as String;
+        final rawAvatarUrl = data['avatarUrl'] as String?;
+        // An empty string ("") is not the same as no avatar — treat it
+        // as null so the initials fallback shows instead of a blank circle.
+        _avatarUrl = (rawAvatarUrl != null && rawAvatarUrl.isNotEmpty) ? rawAvatarUrl : null;
+      }
+    } catch (e) {
+      _showSnack('Не удалось загрузить профиль: $e', isError: true);
+    } finally {
+      if (mounted) setState(() => _isLoadingProfile = false);
+    }
   }
 
   Future<void> _pickAvatar() async {
@@ -88,7 +129,7 @@ class _ProfilePageState extends State<ProfilePage> {
                     _getImage(ImageSource.gallery);
                   },
                 ),
-                if (_avatarFile != null)
+                if (_avatarFile != null || _avatarUrl != null)
                   ListTile(
                     leading: const Icon(Icons.delete_outline, color: Colors.red),
                     title: Text('Удалить фото',
@@ -98,7 +139,7 @@ class _ProfilePageState extends State<ProfilePage> {
                             color: Colors.red)),
                     onTap: () {
                       Navigator.pop(ctx);
-                      setState(() => _avatarFile = null);
+                      _deleteAvatar();
                     },
                   ),
               ],
@@ -109,28 +150,71 @@ class _ProfilePageState extends State<ProfilePage> {
     );
   }
 
+  /// Clears the local + remote avatar. The actual `users/{uid}` document
+  /// (and history log) only get updated once the user hits "Сохранить",
+  /// same as every other field on this screen.
+  Future<void> _deleteAvatar() async {
+    final oldUrl = _avatarUrl;
+    setState(() {
+      _avatarFile = null;
+      _avatarUrl = null;
+    });
+    if (oldUrl != null) {
+      try {
+        await _storage.refFromURL(oldUrl).delete();
+      } catch (_) {
+        // File may already be gone — nothing to do.
+      }
+    }
+  }
+
   Future<void> _getImage(ImageSource source) async {
+    final picked = await _picker.pickImage(
+      source: source,
+      imageQuality: 80,
+      maxWidth: 800,
+    );
+    if (picked == null) return;
+
+    final file = File(picked.path);
+    setState(() {
+      _avatarFile = file;
+      _isUploadingAvatar = true;
+    });
+
     try {
-      final picked = await _picker.pickImage(
-        source: source,
-        imageQuality: 80,
-        maxWidth: 800,
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) {
+        throw Exception('Пользователь не авторизован');
+      }
+
+      // Fixed path per user (not per-upload), so re-uploading a new photo
+      // overwrites the old file in Storage instead of leaving it orphaned.
+      final ext = picked.path.split('.').last.toLowerCase();
+      final ref = _storage.ref().child('avatars/${user.uid}.$ext');
+
+      await ref.putFile(
+        file,
+        SettableMetadata(contentType: 'image/$ext'),
+      ).timeout(
+        const Duration(seconds: 25),
+        onTimeout: () {
+          throw Exception(
+              'Превышено время ожидания. Проверьте интернет-соединение и что Cloud Storage включён в Firebase Console.');
+        },
       );
-      if (picked != null) {
-        setState(() => _avatarFile = File(picked.path));
-        // TODO: upload _avatarFile to Firebase Storage / your backend here
-        // and call user.updatePhotoURL(uploadedUrl) once you have a URL.
+      final url = await ref.getDownloadURL();
+
+      if (mounted) {
+        setState(() {
+          _avatarUrl = url;
+          _isUploadingAvatar = false;
+        });
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Не удалось выбрать фото: $e'),
-            backgroundColor: Colors.black,
-            behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          ),
-        );
+        setState(() => _isUploadingAvatar = false);
+        _showSnack('Не удалось загрузить фото: $e', isError: true);
       }
     }
   }
@@ -293,7 +377,19 @@ class _ProfilePageState extends State<ProfilePage> {
       }
 
       await user?.reload();
-      // TODO: persist phone/telegram/avatar URL to your backend (Firestore, etc.)
+
+      // Persist the profile (name, email, phone, telegram, photo) into the
+      // `users` Firestore collection — and log every change permanently
+      // into `users/{uid}/history` so nothing gets lost on overwrite.
+      if (user != null) {
+        await _historyService.saveProfile(user.uid, {
+          'name': _nameController.text.trim(),
+          'email': newEmail,
+          'phone': _phoneController.text.trim(),
+          'telegram': _telegramController.text.trim(),
+          if (_avatarUrl != null) 'avatarUrl': _avatarUrl,
+        });
+      }
 
       setState(() {
         _isEditing = false;
@@ -411,6 +507,13 @@ class _ProfilePageState extends State<ProfilePage> {
         : 'Без имени';
     final initials = displayName.isNotEmpty ? displayName[0].toUpperCase() : '?';
 
+    if (_isLoadingProfile) {
+      return const Scaffold(
+        backgroundColor: Colors.white,
+        body: Center(child: CircularProgressIndicator(color: Colors.black)),
+      );
+    }
+
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
@@ -477,7 +580,7 @@ class _ProfilePageState extends State<ProfilePage> {
             // ── Аватар ───────────────────────────────────────────────────────
             Center(
               child: GestureDetector(
-                onTap: _isEditing ? _pickAvatar : null,
+                onTap: (_isEditing && !_isUploadingAvatar) ? _pickAvatar : null,
                 child: Stack(
                   children: [
                     Container(
@@ -498,9 +601,14 @@ class _ProfilePageState extends State<ProfilePage> {
                                 image: FileImage(_avatarFile!),
                                 fit: BoxFit.cover,
                               )
-                            : null,
+                            : (_avatarUrl != null
+                                ? DecorationImage(
+                                    image: NetworkImage(_avatarUrl!),
+                                    fit: BoxFit.cover,
+                                  )
+                                : null),
                       ),
-                      child: _avatarFile == null
+                      child: (_avatarFile == null && _avatarUrl == null)
                           ? Center(
                               child: Text(
                                 initials,
@@ -513,6 +621,27 @@ class _ProfilePageState extends State<ProfilePage> {
                             )
                           : null,
                     ),
+                    // Dim overlay + spinner while the picked photo is
+                    // uploading to Firebase Storage.
+                    if (_isUploadingAvatar)
+                      Positioned.fill(
+                        child: Container(
+                          decoration: BoxDecoration(
+                            color: Colors.black.withOpacity(0.45),
+                            shape: BoxShape.circle,
+                          ),
+                          child: Center(
+                            child: SizedBox(
+                              width: 3.h,
+                              height: 3.h,
+                              child: const CircularProgressIndicator(
+                                color: Colors.white,
+                                strokeWidth: 2.5,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
                     if (_isEditing)
                       Positioned(
                         bottom: 0,
@@ -615,7 +744,7 @@ class _ProfilePageState extends State<ProfilePage> {
                 width: double.infinity,
                 height: 6.5.h,
                 child: ElevatedButton(
-                  onPressed: _isSaving ? null : _saveProfile,
+                  onPressed: (_isSaving || _isUploadingAvatar) ? null : _saveProfile,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.black,
                     foregroundColor: Colors.white,

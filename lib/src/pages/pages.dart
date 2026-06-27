@@ -24,3 +24,5 @@ export 'favorite/proget/tag.dart';
 export 'autoslon/autoslon_page.dart';
 export 'car_sell/car_sell_page.dart';
 export 'autoslon/autoslon_publish/autoslon_publish_page.dart';
+export 'car_sell/car_publish/car_publish_page.dart';
+export 'autoslon/edit_profile/profile_edit.dart';
