@@ -67,6 +67,7 @@ class _FadeIndexedStack extends StatelessWidget {
   const _FadeIndexedStack({
     required this.index,
     required this.children,
+    // ignore: unused_element_parameter
     this.duration = const Duration(milliseconds: 280),
   });
 

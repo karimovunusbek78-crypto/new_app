@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:new_app/src/pages/favorite/proget/empty_state.dart';
 import 'package:responsive_sizer/responsive_sizer.dart';
 
 class FavoritePage extends StatelessWidget {
