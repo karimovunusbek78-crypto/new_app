@@ -38,7 +38,7 @@ class _MainNavBarState extends State<MainNavBar> {
   final List<_NavItemData> _items = const [
     _NavItemData(icon: Icons.home_rounded, label: 'Главная'),
     _NavItemData(icon: Icons.search_rounded, label: 'Поиск'),
-    _NavItemData(icon: Icons.favorite_rounded, label: 'Избранное'),
+    _NavItemData(icon: Icons.video_library, label: 'Видео'),
     _NavItemData(icon: Icons.person_rounded, label: 'Профиль'),
   ];
 
