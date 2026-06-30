@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:new_app/src/video/video%20page/video_page.dart';
 import 'package:responsive_sizer/responsive_sizer.dart';
-import 'package:new_app/src/pages/favorite/favorite_page.dart';
 import 'package:new_app/src/pages/pages.dart';
 import 'package:new_app/src/pages/profile/profile_page.dart';
 import 'package:new_app/src/pages/add/add_page.dart';
@@ -16,8 +16,6 @@ class MainNavBar extends StatefulWidget {
 class _MainNavBarState extends State<MainNavBar> {
   int _currentIndex = 0;
 
-  // Pages are built once so their state (scroll position, controllers, etc.)
-  // survives tab switches instead of being thrown away each rebuild.
   late final List<Widget> _pages;
 
   @override
@@ -26,7 +24,7 @@ class _MainNavBarState extends State<MainNavBar> {
     _pages = [
       HomePage(onSearchTap: () => _onTap(1)),
       const SearchPage(),
-      const FavoritePage(),
+      const VideoPage(),
       const ProfilePage(),
     ];
   }
@@ -46,10 +44,10 @@ class _MainNavBarState extends State<MainNavBar> {
   }
 
   final List<_NavItemData> _items = const [
-    _NavItemData(icon: Icons.home_rounded,     label: 'Главная'),
-    _NavItemData(icon: Icons.search_rounded,   label: 'Поиск'),
-    _NavItemData(icon: Icons.favorite_rounded, label: 'Избранное'),
-    _NavItemData(icon: Icons.person_rounded,   label: 'Профиль'),
+    _NavItemData(icon: Icons.home_rounded,            label: 'Главная'),
+    _NavItemData(icon: Icons.search_rounded,          label: 'Поиск'),
+    _NavItemData(icon: Icons.play_circle_fill_rounded, label: 'Видео'),
+    _NavItemData(icon: Icons.person_rounded,          label: 'Профиль'),
   ];
 
   @override
@@ -93,7 +91,6 @@ class _FadeIndexedStack extends StatelessWidget {
           opacity: active ? 1 : 0,
           duration: duration,
           curve: Curves.easeInOut,
-          // A whisper of movement makes the fade feel intentional, not laggy.
           child: AnimatedScale(
             scale: active ? 1 : 0.98,
             duration: duration,
@@ -217,7 +214,7 @@ class _AddButtonState extends State<_AddButton> {
             ],
           ),
           child: AnimatedRotation(
-            turns: _down ? 0.125 : 0.0, // 45° spin on press
+            turns: _down ? 0.125 : 0.0,
             duration: const Duration(milliseconds: 200),
             curve: Curves.easeOut,
             child: Icon(
@@ -271,7 +268,6 @@ class _NavItemState extends State<_NavItem> {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              // Active icon gets a gentle overshoot "pop".
               AnimatedScale(
                 scale: isActive ? 1.0 : 0.92,
                 duration: const Duration(milliseconds: 260),

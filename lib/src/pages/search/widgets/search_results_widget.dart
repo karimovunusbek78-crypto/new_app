@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:new_app/src/pages/home/models/car.dart';
-import 'package:new_app/src/pages/home/widgets/featured_cars_list.dart';
+import 'package:new_app/src/src.dart';
 import 'package:responsive_sizer/responsive_sizer.dart';
 
 class SearchResultsWidget extends StatelessWidget {
@@ -46,7 +46,7 @@ class SearchResultsWidget extends StatelessWidget {
       padding: EdgeInsets.fromLTRB(5.w, 0, 5.w, 3.h),
       itemCount: results.length,
       separatorBuilder: (_, __) => SizedBox(height: 1.5.h),
-      itemBuilder: (context, index) => FeaturedCarCard(car: results[index]),
+      itemBuilder: (context, index) => HomeCarCard(car: results[index]),
     );
   }
 }
