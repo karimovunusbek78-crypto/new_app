@@ -4,6 +4,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 import 'package:new_app/src/pages/autoslon/permission/publish_permission.dart';
 import 'package:new_app/src/pages/home/models/car.dart';
+import 'package:new_app/src/pages/home/providers/cars_provider.dart';
 import 'package:responsive_sizer/responsive_sizer.dart';
 
 /// Dedicated publish form for the car-sell flow. [CarSellPage] only handles
@@ -215,8 +216,9 @@ class _CarPublishPageState extends State<CarPublishPage>
       return;
     }
 
-    // Capture the notifier before any await (avoids using context across gaps).
+    // Capture providers before any await (avoids using context across gaps).
     final notifier = context.read<CarSellPermissionNotifier>();
+    final carsProvider = context.read<CarsProvider>();
 
     // The publish button does not publish immediately: confirm first.
     final confirmed = await showPublishConfirmDialog(context);
@@ -249,6 +251,9 @@ class _CarPublishPageState extends State<CarPublishPage>
 
     // TODO: upload _photos / _video (e.g. to Cloudinary or Supabase) and
     // store the resulting URLs instead of local paths, if needed elsewhere.
+
+    // Push into the in-memory store so it shows up on Home / Video tabs immediately.
+    carsProvider.addCar(car);
 
     // Consume the one-time permission, then return the new car. After this the
     // user must request permission again for the next listing.

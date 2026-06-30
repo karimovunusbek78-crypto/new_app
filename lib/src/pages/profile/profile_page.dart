@@ -5,6 +5,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:new_app/src/pages/profile/service/profile_history_service.dart';
+import 'package:new_app/src/pages/favorite/favorite_page.dart';
+import 'package:new_app/src/pages/settings/settings_page.dart';
 import 'package:responsive_sizer/responsive_sizer.dart';
 
 
@@ -685,6 +687,38 @@ class _ProfilePageState extends State<ProfilePage> {
 
             SizedBox(height: 3.5.h),
 
+            // ── Меню (Избранное / Активность / Настройки) ──────────────────────
+            const _SectionLabel(label: 'Меню'),
+            SizedBox(height: 1.2.h),
+
+            _MenuTile(
+              icon: Icons.favorite_border_rounded,
+              label: 'Избранное',
+              onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const FavoritePage()),
+              ),
+            ),
+            SizedBox(height: 1.2.h),
+            _MenuTile(
+              icon: Icons.history_rounded,
+              label: 'Моя активность',
+              onTap: () {
+                // TODO: hook up to your activity/history page when ready
+              },
+            ),
+            SizedBox(height: 1.2.h),
+            _MenuTile(
+              icon: Icons.settings_outlined,
+              label: 'Настройки',
+              onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const SettingsPage()),
+              ),
+            ),
+
+            SizedBox(height: 3.5.h),
+
             // ── Поля ─────────────────────────────────────────────────────────
             const _SectionLabel(label: 'Личные данные'),
             SizedBox(height: 1.2.h),
@@ -818,6 +852,49 @@ class _SectionLabel extends StatelessWidget {
           color: const Color(0xFF8A8A8E),
           letterSpacing: 0.8,
         ),
+      ),
+    );
+  }
+}
+
+// ── Menu tile (Избранное / Активность / Настройки) ──────────────────────────
+
+class _MenuTile extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+
+  const _MenuTile({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: const Color(0xFFF7F7F7),
+        borderRadius: BorderRadius.circular(3.5.w),
+        border: Border.all(color: const Color(0xFFEFEFEF), width: 1),
+      ),
+      child: ListTile(
+        onTap: onTap,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(3.5.w),
+        ),
+        leading: Icon(icon, color: Colors.black, size: 2.4.h),
+        title: Text(
+          label,
+          style: TextStyle(
+            fontSize: 14.sp,
+            fontWeight: FontWeight.w600,
+            color: Colors.black,
+          ),
+        ),
+        trailing: Icon(Icons.chevron_right_rounded,
+            color: const Color(0xFFB0B0B0), size: 2.4.h),
+        contentPadding: EdgeInsets.symmetric(horizontal: 4.w, vertical: 0.4.h),
       ),
     );
   }

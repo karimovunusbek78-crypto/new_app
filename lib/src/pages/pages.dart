@@ -26,3 +26,8 @@ export 'car_sell/car_sell_page.dart';
 export 'autoslon/autoslon_publish/autoslon_publish_page.dart';
 export 'car_sell/car_publish/car_publish_page.dart';
 export 'autoslon/edit_profile/profile_edit.dart';
+export 'settings/settings_page.dart';
+export 'home/widgets/car_photo_caursel.dart';
+export 'home/widgets/home_car_card.dart';
+export 'home/providers/cars_provider.dart';
+export 'home/pages/car_detail_page.dart';
