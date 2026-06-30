@@ -1,24 +1,13 @@
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:new_app/src/pages/autoslon/permission/publish_permission.dart';
 import 'package:new_app/src/pages/car_sell/car_publish/car_publish_page.dart';
 import 'package:provider/provider.dart';
-import 'package:url_launcher/url_launcher.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:responsive_sizer/responsive_sizer.dart';
-
-// NOTE: CarSellPermissionNotifier now lives in publish_permissions.dart.
-// Make sure it is registered in your Provider tree, e.g.:
-//   ChangeNotifierProvider(create: (_) => CarSellPermissionNotifier()),
-//
-// This page now ONLY handles the access-request flow (none / waiting /
-// loading). Once permission is granted it pushes [CarPublishPage], which
-// owns the actual publish form. Whatever [CarPublishPage] returns (the new
-// [Car], or null if the user backs out) is then passed straight back up by
-// popping this page with the same result — so callers of [CarSellPage]
-// keep working exactly as before.
+import 'package:url_launcher/url_launcher.dart';
 
 class CarSellPage extends StatefulWidget {
-  const CarSellPage({Key? key}) : super(key: key);
+  const CarSellPage({super.key});
 
   @override
   State<CarSellPage> createState() => _CarSellPageState();
@@ -26,44 +15,31 @@ class CarSellPage extends StatefulWidget {
 
 class _CarSellPageState extends State<CarSellPage>
     with TickerProviderStateMixin {
-  // Accent colors
   static const _accentDark = Color(0xFF111111);
   static const _accentBlue = Color(0xFF5B4FD9);
-
-  // Your contact details
   static const _whatsappNumber = '996555510225';
   static const _phoneNumber = '+996555510225';
   static const _telegramHandle = '@fahriddin151515';
-
-  // ── Animation Controllers ─────────────────────────────────────
   late final AnimationController _fadeController;
   late final AnimationController _scaleController;
   late final AnimationController _slideController;
   late final AnimationController _pulseController;
-
-  // Animations
   late Animation<double> _fadeAnimation;
   late Animation<double> _scaleAnimation;
   late Animation<Offset> _slideAnimation;
   late Animation<double> _pulseAnimation;
-
-  // Guards against pushing CarPublishPage more than once while granted.
   bool _navigatedToPublish = false;
-
   @override
   void initState() {
     super.initState();
-
-    // Fade animation (0-600ms)
     _fadeController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 600),
     );
-    _fadeAnimation = Tween<double>(begin: 0, end: 1).animate(
-      CurvedAnimation(parent: _fadeController, curve: Curves.easeOut),
-    );
-
-    // Scale animation (200-1000ms)
+    _fadeAnimation = Tween<double>(
+      begin: 0,
+      end: 1,
+    ).animate(CurvedAnimation(parent: _fadeController, curve: Curves.easeOut));
     _scaleController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 800),
@@ -71,18 +47,14 @@ class _CarSellPageState extends State<CarSellPage>
     _scaleAnimation = Tween<double>(begin: 0.8, end: 1.0).animate(
       CurvedAnimation(parent: _scaleController, curve: Curves.elasticOut),
     );
-
-    // Slide animation for cards (300-1200ms)
     _slideController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 900),
     );
     _slideAnimation =
         Tween<Offset>(begin: const Offset(0, 0.5), end: Offset.zero).animate(
-      CurvedAnimation(parent: _slideController, curve: Curves.easeOutCubic),
-    );
-
-    // Pulse animation (1300ms, repeating)
+          CurvedAnimation(parent: _slideController, curve: Curves.easeOutCubic),
+        );
     _pulseController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1300),
@@ -90,8 +62,6 @@ class _CarSellPageState extends State<CarSellPage>
     _pulseAnimation = Tween<double>(begin: 1.0, end: 1.08).animate(
       CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
     );
-
-    // Start animations
     _fadeController.forward();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
@@ -101,10 +71,6 @@ class _CarSellPageState extends State<CarSellPage>
         });
       }
     });
-
-    // Start listening to the permission document (live updates). When the
-    // admin grants access, the Consumer below moves on to CarPublishPage
-    // on its own.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
         context.read<CarSellPermissionNotifier>().start();
@@ -121,18 +87,17 @@ class _CarSellPageState extends State<CarSellPage>
     super.dispose();
   }
 
-  // Records the permission request (call when a contact button is tapped).
   void _request() {
     if (!mounted) return;
     context.read<CarSellPermissionNotifier>().requestPermission();
   }
 
-  // Opens WhatsApp with user's ID pre-filled.
   Future<void> _openWhatsApp() async {
     _request();
     final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
-    final text =
-        Uri.encodeComponent('Хочу разрешение на публикацию. Мой ID: $uid');
+    final text = Uri.encodeComponent(
+      'Хочу разрешение на публикацию. Мой ID: $uid',
+    );
     final url = Uri.parse('https://wa.me/$_whatsappNumber?text=$text');
     try {
       await launchUrl(url, mode: LaunchMode.externalApplication);
@@ -145,7 +110,6 @@ class _CarSellPageState extends State<CarSellPage>
     }
   }
 
-  // Opens Telegram
   Future<void> _openTelegram() async {
     _request();
     final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
@@ -161,20 +125,17 @@ class _CarSellPageState extends State<CarSellPage>
     }
   }
 
-  // Pushes the dedicated publish form once permission is granted, then
-  // forwards whatever it returns back to whoever opened CarSellPage.
   Future<void> _goToPublishPage() async {
     if (_navigatedToPublish) return;
     _navigatedToPublish = true;
 
-    final result = await Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => const CarPublishPage()),
-    );
+    final result = await Navigator.of(
+      context,
+    ).push(MaterialPageRoute(builder: (_) => const CarPublishPage()));
 
     if (!mounted) return;
     Navigator.pop(context, result);
   }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -186,8 +147,9 @@ class _CarSellPageState extends State<CarSellPage>
               case PublishPermissionState.loading:
                 return _buildLoadingScreen();
               case PublishPermissionState.granted:
-                WidgetsBinding.instance
-                    .addPostFrameCallback((_) => _goToPublishPage());
+                WidgetsBinding.instance.addPostFrameCallback(
+                  (_) => _goToPublishPage(),
+                );
                 return _buildLoadingScreen();
               case PublishPermissionState.waiting:
                 return _buildWaitingView();
@@ -199,8 +161,6 @@ class _CarSellPageState extends State<CarSellPage>
       ),
     );
   }
-
-  // ── Loading screen ────────────────────────────────────────────
   Widget _buildLoadingScreen() {
     return Center(
       child: ScaleTransition(
@@ -216,8 +176,6 @@ class _CarSellPageState extends State<CarSellPage>
       ),
     );
   }
-
-  // ── Waiting for approval screen ────────────────────────────────
   Widget _buildWaitingView() {
     return FadeTransition(
       opacity: _fadeAnimation,
@@ -232,13 +190,14 @@ class _CarSellPageState extends State<CarSellPage>
                 onTap: () => Navigator.maybePop(context),
                 child: Padding(
                   padding: EdgeInsets.only(left: 5.w, top: 1.h, bottom: 2.h),
-                  child:
-                      Icon(Icons.arrow_back, color: _accentDark, size: 3.2.h),
+                  child: Icon(
+                    Icons.arrow_back,
+                    color: _accentDark,
+                    size: 3.2.h,
+                  ),
                 ),
               ),
             ),
-
-            // Hourglass hero icon (pulsing)
             ScaleTransition(
               scale: _scaleAnimation,
               child: ScaleTransition(
@@ -261,8 +220,11 @@ class _CarSellPageState extends State<CarSellPage>
                       ),
                     ],
                   ),
-                  child: Icon(Icons.hourglass_top_rounded,
-                      color: _accentBlue, size: 14.w),
+                  child: Icon(
+                    Icons.hourglass_top_rounded,
+                    color: _accentBlue,
+                    size: 14.w,
+                  ),
                 ),
               ),
             ),
@@ -283,10 +245,7 @@ class _CarSellPageState extends State<CarSellPage>
                 ),
               ),
             ),
-
             SizedBox(height: 1.h),
-
-            // Subtitle
             Padding(
               padding: EdgeInsets.symmetric(horizontal: 6.w),
               child: Text(
@@ -300,10 +259,7 @@ class _CarSellPageState extends State<CarSellPage>
                 ),
               ),
             ),
-
             SizedBox(height: 3.h),
-
-            // Live status row
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
@@ -326,10 +282,7 @@ class _CarSellPageState extends State<CarSellPage>
                 ),
               ],
             ),
-
             SizedBox(height: 3.h),
-
-            // Follow-up contact options
             Padding(
               padding: EdgeInsets.symmetric(horizontal: 5.w),
               child: Column(
@@ -365,15 +318,12 @@ class _CarSellPageState extends State<CarSellPage>
                 ],
               ),
             ),
-
             SizedBox(height: 2.h),
           ],
         ),
       ),
     );
   }
-
-  // ── Permission required screen ─────────────────────────────────
   Widget _buildPermissionView() {
     return FadeTransition(
       opacity: _fadeAnimation,
@@ -390,14 +340,15 @@ class _CarSellPageState extends State<CarSellPage>
                   onTap: () => Navigator.maybePop(context),
                   child: Padding(
                     padding: EdgeInsets.only(left: 5.w, top: 1.h, bottom: 2.h),
-                    child: Icon(Icons.arrow_back,
-                        color: _accentDark, size: 3.2.h),
+                    child: Icon(
+                      Icons.arrow_back,
+                      color: _accentDark,
+                      size: 3.2.h,
+                    ),
                   ),
                 ),
               ),
             ),
-
-            // Hero icon with scale + pulse
             ScaleTransition(
               scale: _scaleAnimation,
               child: ScaleTransition(
@@ -428,10 +379,7 @@ class _CarSellPageState extends State<CarSellPage>
                 ),
               ),
             ),
-
             SizedBox(height: 3.h),
-
-            // Title with fade + slide
             SlideTransition(
               position: _slideAnimation,
               child: FadeTransition(
@@ -451,10 +399,7 @@ class _CarSellPageState extends State<CarSellPage>
                 ),
               ),
             ),
-
             SizedBox(height: 1.h),
-
-            // Subtitle with fade + slide
             SlideTransition(
               position: _slideAnimation,
               child: FadeTransition(
@@ -473,10 +418,7 @@ class _CarSellPageState extends State<CarSellPage>
                 ),
               ),
             ),
-
             SizedBox(height: 4.h),
-
-            // Contact section header
             FadeTransition(
               opacity: _fadeAnimation,
               child: SlideTransition(
@@ -509,10 +451,7 @@ class _CarSellPageState extends State<CarSellPage>
                 ),
               ),
             ),
-
             SizedBox(height: 3.h),
-
-            // Contact cards with staggered animation
             Padding(
               padding: EdgeInsets.symmetric(horizontal: 5.w),
               child: Column(
@@ -551,10 +490,7 @@ class _CarSellPageState extends State<CarSellPage>
                 ],
               ),
             ),
-
             SizedBox(height: 3.h),
-
-            // Footer text
             FadeTransition(
               opacity: _fadeAnimation,
               child: Padding(
@@ -570,15 +506,12 @@ class _CarSellPageState extends State<CarSellPage>
                 ),
               ),
             ),
-
             SizedBox(height: 2.h),
           ],
         ),
       ),
     );
   }
-
-  // ── Animated contact card ─────────────────────────────────────
   Widget _animatedContactCard({
     required int order,
     required IconData icon,
@@ -595,14 +528,11 @@ class _CarSellPageState extends State<CarSellPage>
       vsync: this,
       duration: const Duration(milliseconds: 800),
     );
-
     final animation = CurvedAnimation(
       parent: animationController,
       curve: Interval(start, end, curve: Curves.easeOutCubic),
     );
-
     Future.microtask(() => animationController.forward());
-
     return AnimatedBuilder(
       animation: animation,
       builder: (context, child) => Opacity(
@@ -622,15 +552,12 @@ class _CarSellPageState extends State<CarSellPage>
     );
   }
 }
-
-// ── Hover Contact Card ────────────────────────────────────────
 class _HoverContactCard extends StatefulWidget {
   final IconData icon;
   final String title;
   final String subtitle;
   final VoidCallback onTap;
   final Color badgeColor;
-
   const _HoverContactCard({
     required this.icon,
     required this.title,
@@ -638,16 +565,13 @@ class _HoverContactCard extends StatefulWidget {
     required this.onTap,
     required this.badgeColor,
   });
-
   @override
   State<_HoverContactCard> createState() => _HoverContactCardState();
 }
-
 class _HoverContactCardState extends State<_HoverContactCard>
     with SingleTickerProviderStateMixin {
   late final AnimationController _hoverController;
   late final Animation<double> _hoverAnimation;
-
   @override
   void initState() {
     super.initState();
@@ -655,17 +579,16 @@ class _HoverContactCardState extends State<_HoverContactCard>
       vsync: this,
       duration: const Duration(milliseconds: 300),
     );
-    _hoverAnimation = Tween<double>(begin: 0, end: 1).animate(
-      CurvedAnimation(parent: _hoverController, curve: Curves.easeOut),
-    );
+    _hoverAnimation = Tween<double>(
+      begin: 0,
+      end: 1,
+    ).animate(CurvedAnimation(parent: _hoverController, curve: Curves.easeOut));
   }
-
   @override
   void dispose() {
     _hoverController.dispose();
     super.dispose();
   }
-
   @override
   Widget build(BuildContext context) {
     return MouseRegion(
@@ -688,7 +611,8 @@ class _HoverContactCardState extends State<_HoverContactCard>
               boxShadow: [
                 BoxShadow(
                   color: widget.badgeColor.withOpacity(
-                      0.08 + (_hoverAnimation.value * 0.12)),
+                    0.08 + (_hoverAnimation.value * 0.12),
+                  ),
                   blurRadius: 12 + (_hoverAnimation.value * 8),
                   offset: Offset(0, 4 + (_hoverAnimation.value * 4)),
                 ),
@@ -703,8 +627,11 @@ class _HoverContactCardState extends State<_HoverContactCard>
                     color: widget.badgeColor.withOpacity(0.1),
                     borderRadius: BorderRadius.circular(3.w),
                   ),
-                  child: Icon(widget.icon,
-                      color: widget.badgeColor, size: 2.8.h),
+                  child: Icon(
+                    widget.icon,
+                    color: widget.badgeColor,
+                    size: 2.8.h,
+                  ),
                 ),
                 SizedBox(width: 3.w),
                 Expanded(
@@ -732,8 +659,11 @@ class _HoverContactCardState extends State<_HoverContactCard>
                     ],
                   ),
                 ),
-                Icon(Icons.arrow_forward_ios_rounded,
-                    color: const Color(0xFFCCCCCC), size: 2.h),
+                Icon(
+                  Icons.arrow_forward_ios_rounded,
+                  color: const Color(0xFFCCCCCC),
+                  size: 2.h,
+                ),
               ],
             ),
           ),
