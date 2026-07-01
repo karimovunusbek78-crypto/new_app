@@ -228,10 +228,7 @@ class _CarSellPageState extends State<CarSellPage>
                 ),
               ),
             ),
-
             SizedBox(height: 3.h),
-
-            // Title
             Padding(
               padding: EdgeInsets.symmetric(horizontal: 5.w),
               child: Text(
