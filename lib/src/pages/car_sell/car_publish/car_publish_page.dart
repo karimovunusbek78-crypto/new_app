@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:video_player/video_player.dart';
 import 'package:provider/provider.dart';
+import 'package:firebase_storage/firebase_storage.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:new_app/src/pages/autoslon/permission/publish_permission.dart';
 import 'package:new_app/src/pages/home/models/car.dart';
 import 'package:new_app/src/pages/home/providers/cars_provider.dart';
@@ -70,6 +72,10 @@ class _CarPublishPageState extends State<CarPublishPage>
   VideoPlayerController? _videoPreviewController;
   Duration? _videoDuration;
   bool _videoPreviewReady = false;
+
+  // True while photos/video are being uploaded to Firebase Storage and the
+  // Firestore document is being written — blocks the submit button.
+  bool _isUploading = false;
 
   // Accent color — publish actions are black, matching the autoslon flow.
   static const _accent = Color(0xFF111111);
@@ -247,6 +253,8 @@ class _CarPublishPageState extends State<CarPublishPage>
       );
 
   Future<void> _submit() async {
+    if (_isUploading) return;
+
     if (!_formKey.currentState!.validate()) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Заполните все поля')),
@@ -273,6 +281,14 @@ class _CarPublishPageState extends State<CarPublishPage>
       return;
     }
 
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Пользователь не авторизован')),
+      );
+      return;
+    }
+
     // Capture providers before any await (avoids using context across gaps).
     final notifier = context.read<CarSellPermissionNotifier>();
     final carsProvider = context.read<CarsProvider>();
@@ -281,43 +297,76 @@ class _CarPublishPageState extends State<CarPublishPage>
     final confirmed = await showPublishConfirmDialog(context);
     if (!confirmed || !mounted) return;
 
-    final car = Car(
-      id: DateTime.now().millisecondsSinceEpoch.toString(),
-      name: _nameController.text.trim(),
-      year: _yearController.text.trim(),
-      km: _kmController.text.trim(),
-      price: _priceController.text.trim(),
-      transmission: _transmission!,
-      fuelType: _fuelType!,
-      engineCapacity: _engineController.text.trim(),
-      bodyType: _bodyType!,
-      color: _colorController.text.trim(),
-      location: _locationController.text.trim(),
-      ownersCount: _ownersController.text.trim(),
-      description: _descController.text.trim(),
-      driveType: _driveType!,
-      condition: _condition!,
-      photoPaths: _photos.map((x) => x.path).toList(),
-      videoPath: _video?.path,
-      priceNegotiable: _priceNegotiable,
-      changesDescription: _changesController.text.trim(),
-      phone: _phoneController.text.trim(),
-      contactWhatsapp: _contactWhatsapp,
-      contactTelegram: _contactTelegram,
-    );
+    final carId = DateTime.now().millisecondsSinceEpoch.toString();
 
-    // TODO: upload _photos / _video (e.g. to Cloudinary or Supabase) and
-    // store the resulting URLs instead of local paths, if needed elsewhere.
+    setState(() => _isUploading = true);
 
-    // Push into the in-memory store so it shows up on Home / Video tabs immediately.
-    carsProvider.addCar(car);
+    try {
+      final storage = FirebaseStorage.instance;
 
-    // Consume the one-time permission, then return the new car. After this the
-    // user must request permission again for the next listing.
-    await notifier.consume();
-    if (!mounted) return;
+      // ── Загрузка фото в Storage ─────────────────────────────
+      final photoUrls = <String>[];
+      for (int i = 0; i < _photos.length; i++) {
+        final file = File(_photos[i].path);
+        final ref = storage.ref('cars/${user.uid}/$carId/photo_$i.jpg');
+        await ref.putFile(file, SettableMetadata(contentType: 'image/jpeg'));
+        photoUrls.add(await ref.getDownloadURL());
+      }
 
-    Navigator.pop(context, car);
+      // ── Загрузка видео в Storage (если есть) ─────────────────
+      String? videoUrl;
+      if (_video != null) {
+        final file = File(_video!.path);
+        final ref = storage.ref('cars/${user.uid}/$carId/video.mp4');
+        await ref.putFile(file, SettableMetadata(contentType: 'video/mp4'));
+        videoUrl = await ref.getDownloadURL();
+      }
+
+      final car = Car(
+        id: carId,
+        ownerId: user.uid,
+        name: _nameController.text.trim(),
+        year: _yearController.text.trim(),
+        km: _kmController.text.trim(),
+        price: _priceController.text.trim(),
+        transmission: _transmission!,
+        fuelType: _fuelType!,
+        engineCapacity: _engineController.text.trim(),
+        bodyType: _bodyType!,
+        color: _colorController.text.trim(),
+        location: _locationController.text.trim(),
+        ownersCount: _ownersController.text.trim(),
+        description: _descController.text.trim(),
+        driveType: _driveType!,
+        condition: _condition!,
+        photoPaths: photoUrls, // Storage-URL, не локальные пути
+        videoPath: videoUrl,   // Storage-URL
+        priceNegotiable: _priceNegotiable,
+        changesDescription: _changesController.text.trim(),
+        phone: _phoneController.text.trim(),
+        contactWhatsapp: _contactWhatsapp,
+        contactTelegram: _contactTelegram,
+      );
+
+      // Пишет документ в Firestore; список на Home/Video обновится сам
+      // через живую подписку CarsProvider.
+      await carsProvider.publishCar(car);
+
+      // Consume the one-time permission, then return the new car. After this
+      // the user must request permission again for the next listing.
+      await notifier.consume();
+      if (!mounted) return;
+
+      Navigator.pop(context, car);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Ошибка публикации: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isUploading = false);
+    }
   }
 
   @override
@@ -1105,7 +1154,7 @@ class _CarPublishPageState extends State<CarPublishPage>
 
   Widget _submitButton() {
     return _AnimatedPressableButton(
-      onTap: _submit,
+      onTap: _isUploading ? () {} : _submit,
       child: Container(
         width: double.infinity,
         padding: EdgeInsets.symmetric(vertical: 2.2.h),
@@ -1121,15 +1170,22 @@ class _CarPublishPageState extends State<CarPublishPage>
           ],
         ),
         alignment: Alignment.center,
-        child: Text(
-          'Опубликовать объявление',
-          style: TextStyle(
-            fontSize: 15.sp,
-            fontWeight: FontWeight.w700,
-            color: Colors.white,
-            letterSpacing: -0.2,
-          ),
-        ),
+        child: _isUploading
+            ? SizedBox(
+                width: 2.5.h,
+                height: 2.5.h,
+                child: const CircularProgressIndicator(
+                    color: Colors.white, strokeWidth: 2),
+              )
+            : Text(
+                'Опубликовать объявление',
+                style: TextStyle(
+                  fontSize: 15.sp,
+                  fontWeight: FontWeight.w700,
+                  color: Colors.white,
+                  letterSpacing: -0.2,
+                ),
+              ),
       ),
     );
   }
