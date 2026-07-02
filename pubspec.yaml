@@ -46,6 +46,7 @@ dependencies:
   latlong2: ^0.9.1
   http: ^1.6.0
   video_player: ^2.11.1
+  visibility_detector: ^0.4.0+2
 
 dev_dependencies:
   flutter_test:

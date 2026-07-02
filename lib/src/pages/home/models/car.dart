@@ -1,4 +1,4 @@
-// lib/models/car.dart
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 class Car {
   final String id;
@@ -12,23 +12,23 @@ class Car {
   final String bodyType;
   final String color;
   final String location;
+  final String ownersCount;
+  final String description;
+  final String driveType;
+  final String condition;
+  final List<String> photoPaths;
+  final String? videoPath;
+  final bool priceNegotiable;
+  final String changesDescription;
+  final String phone;
+  final bool contactWhatsapp;
+  final bool contactTelegram;
 
-  // ── New fields ────────────────────────────────────────────────
-  // All have safe defaults so existing `const Car(...)` entries (e.g. in
-  // cars_data.dart) keep compiling without changes.
-  final String ownersCount; // Количество владельцев
-  final String description; // Описание
-  final String driveType; // Привод: Передний / Задний / Полный
-  final String condition; // Состояние: Новый / Б.у. / После аварии / Требует ремонта
-  final List<String> photoPaths; // Локальные пути к фото (макс. 4)
-  final String? videoPath; // Локальный путь к видео (опционально)
-
-  // ── Negotiation / changes / contact fields ──────────────────────
-  final bool priceNegotiable; // Цена обсуждается (торг)
-  final String changesDescription; // Что изменено / отремонтировано
-  final String phone; // Контактный номер телефона (обязателен)
-  final bool contactWhatsapp; // Можно писать в WhatsApp
-  final bool contactTelegram; // Можно писать в Telegram
+  // ── Firestore / stats fields ────────────────────────────────────
+  final String ownerId;       // uid владельца объявления
+  final int likesCount;
+  final int viewsCount;
+  final DateTime? createdAt;  // null пока не пришло из Firestore
 
   const Car({
     required this.id,
@@ -53,5 +53,85 @@ class Car {
     this.phone = '',
     this.contactWhatsapp = false,
     this.contactTelegram = false,
+    this.ownerId = '',
+    this.likesCount = 0,
+    this.viewsCount = 0,
+    this.createdAt,
   });
+
+  /// Только текст + статы — без photoPaths/videoPath (их пока не грузим).
+  Map<String, dynamic> toFirestoreMap() {
+    return {
+      'name': name,
+      'year': year,
+      'km': km,
+      'price': price,
+      'transmission': transmission,
+      'fuelType': fuelType,
+      'engineCapacity': engineCapacity,
+      'bodyType': bodyType,
+      'color': color,
+      'location': location,
+      'ownersCount': ownersCount,
+      'description': description,
+      'driveType': driveType,
+      'condition': condition,
+      'priceNegotiable': priceNegotiable,
+      'changesDescription': changesDescription,
+      'phone': phone,
+      'contactWhatsapp': contactWhatsapp,
+      'contactTelegram': contactTelegram,
+      'ownerId': ownerId,
+      'likesCount': likesCount,
+      'viewsCount': viewsCount,
+      'photoPaths': photoPaths,   // ← добавлено (уже будут Storage-URL, не локальные пути)
+      'videoPath': videoPath,
+      'createdAt': FieldValue.serverTimestamp(),
+    };
+  }
+
+  factory Car.fromFirestore(String id, Map<String, dynamic> data) {
+    return Car(
+      id: id,
+      name: data['name'] ?? '',
+      year: data['year'] ?? '',
+      km: data['km'] ?? '',
+      price: data['price'] ?? '',
+      transmission: data['transmission'] ?? '',
+      fuelType: data['fuelType'] ?? '',
+      engineCapacity: data['engineCapacity'] ?? '',
+      bodyType: data['bodyType'] ?? '',
+      color: data['color'] ?? '',
+      location: data['location'] ?? '',
+      ownersCount: data['ownersCount'] ?? '',
+      description: data['description'] ?? '',
+      driveType: data['driveType'] ?? '',
+      condition: data['condition'] ?? '',
+      priceNegotiable: data['priceNegotiable'] ?? false,
+      changesDescription: data['changesDescription'] ?? '',
+      phone: data['phone'] ?? '',
+      contactWhatsapp: data['contactWhatsapp'] ?? false,
+      contactTelegram: data['contactTelegram'] ?? false,
+      ownerId: data['ownerId'] ?? '',
+      likesCount: data['likesCount'] ?? 0,
+      viewsCount: data['viewsCount'] ?? 0,
+      photoPaths: List<String>.from(data['photoPaths'] ?? const []), // ← добавлено
+      videoPath: data['videoPath'] as String?,          
+      createdAt: (data['createdAt'] as Timestamp?)?.toDate(),    
+    );
+  }
+
+  Car copyWith({int? likesCount, int? viewsCount, List<String>? photoPaths, String? videoPath}) {
+    return Car(
+      id: id, name: name, year: year, km: km, price: price,
+      transmission: transmission, fuelType: fuelType, engineCapacity: engineCapacity,
+      bodyType: bodyType, color: color, location: location, ownersCount: ownersCount,
+      description: description, driveType: driveType, condition: condition,
+      photoPaths: photoPaths ?? this.photoPaths, videoPath: videoPath ?? this.videoPath,
+      priceNegotiable: priceNegotiable, changesDescription: changesDescription, phone: phone,
+      contactWhatsapp: contactWhatsapp, contactTelegram: contactTelegram, ownerId: ownerId,
+      likesCount: likesCount ?? this.likesCount, viewsCount: viewsCount ?? this.viewsCount,
+      createdAt: createdAt,
+    );
+  }
 }

@@ -4,14 +4,15 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:new_app/src/pages/home/providers/subscribtion_provider.dart';
 import 'package:provider/provider.dart';
 import 'package:responsive_sizer/responsive_sizer.dart';
 import 'package:video_player/video_player.dart';
+import 'package:visibility_detector/visibility_detector.dart';
 
 import 'package:new_app/src/pages/home/models/car.dart';
 import 'package:new_app/src/pages/home/pages/car_detail_page.dart';
 import 'package:new_app/src/pages/home/providers/cars_provider.dart';
-import 'package:new_app/src/pages/pages.dart'; // FavoritesProvider
 
 class VideoPage extends StatefulWidget {
   const VideoPage({Key? key}) : super(key: key);
@@ -20,18 +21,20 @@ class VideoPage extends StatefulWidget {
   State<VideoPage> createState() => _VideoPageState();
 }
 
-class _VideoPageState extends State<VideoPage> {
+class _VideoPageState extends State<VideoPage> with WidgetsBindingObserver {
   final PageController _pageController = PageController();
   int _currentPage = 0;
 
   // Global sound toggle — stays consistent as you swipe between reels.
   bool _muted = false;
 
-  // Author (publisher) info pulled straight from the profile — shown as the
-  // "@creator" block on every reel, like @AutoDrive in the screenshot.
-  // NOTE: shows the CURRENT logged-in user for every reel (fine while each
-  // user only publishes their own listings on-device). For a true multi-author
-  // feed, store author name/avatar on the Car at publish time and read `car`.
+  // Playback gates: only play when the page is on screen AND the app is
+  // in the foreground.
+  bool _pageVisible = true;
+  bool _appActive = true;
+  bool get _pageActive => _pageVisible && _appActive;
+
+  // Author (publisher) info pulled straight from the profile.
   String? _authorName;
   String? _authorAvatarUrl;
 
@@ -41,7 +44,20 @@ class _VideoPageState extends State<VideoPage> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _loadAuthor();
+    // Kill any keyboard left focused by a previous screen (e.g. the publish form).
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) FocusManager.instance.primaryFocus?.unfocus();
+    });
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    final active = state == AppLifecycleState.resumed;
+    if (active != _appActive && mounted) {
+      setState(() => _appActive = active);
+    }
   }
 
   Future<void> _loadAuthor() async {
@@ -69,6 +85,7 @@ class _VideoPageState extends State<VideoPage> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _pageController.dispose();
     super.dispose();
   }
@@ -78,37 +95,49 @@ class _VideoPageState extends State<VideoPage> {
     final cars = context.watch<CarsProvider>().carsWithVideo;
 
     return AnnotatedRegion<SystemUiOverlayStyle>(
-      value: SystemUiOverlayStyle.light, // light status-bar icons over dark bg
+      value: SystemUiOverlayStyle.light,
       child: Scaffold(
         backgroundColor: Colors.black,
-        body: cars.isEmpty
-            ? const _EmptyVideoState()
-            : PageView.builder(
-                controller: _pageController,
-                scrollDirection: Axis.vertical,
-                itemCount: cars.length,
-                onPageChanged: (i) => setState(() => _currentPage = i),
-                itemBuilder: (context, index) {
-                  final car = cars[index];
-                  return _VideoReel(
-                    key: ValueKey(car.id),
-                    car: car,
-                    isActive: index == _currentPage,
-                    muted: _muted,
-                    onToggleMute: () => setState(() => _muted = !_muted),
-                    authorName: _authorName,
-                    authorAvatarUrl: _authorAvatarUrl,
-                    saved: _saved.contains(car.id),
-                    onToggleSave: () => setState(() {
-                      if (_saved.contains(car.id)) {
-                        _saved.remove(car.id);
-                      } else {
-                        _saved.add(car.id);
-                      }
-                    }),
-                  );
-                },
-              ),
+        body: VisibilityDetector(
+          key: const Key('video-page-visibility'),
+          onVisibilityChanged: (info) {
+            final visible = info.visibleFraction > 0.5;
+            if (visible != _pageVisible) {
+              _pageVisible = visible;
+              if (visible) FocusManager.instance.primaryFocus?.unfocus();
+              if (mounted) setState(() {});
+            }
+          },
+          child: cars.isEmpty
+              ? const _EmptyVideoState()
+              : PageView.builder(
+                  controller: _pageController,
+                  scrollDirection: Axis.vertical,
+                  itemCount: cars.length,
+                  onPageChanged: (i) => setState(() => _currentPage = i),
+                  itemBuilder: (context, index) {
+                    final car = cars[index];
+                    return _VideoReel(
+                      key: ValueKey(car.id),
+                      car: car,
+                      isActive: index == _currentPage,
+                      pageActive: _pageActive,
+                      muted: _muted,
+                      onToggleMute: () => setState(() => _muted = !_muted),
+                      authorName: _authorName,
+                      authorAvatarUrl: _authorAvatarUrl,
+                      saved: _saved.contains(car.id),
+                      onToggleSave: () => setState(() {
+                        if (_saved.contains(car.id)) {
+                          _saved.remove(car.id);
+                        } else {
+                          _saved.add(car.id);
+                        }
+                      }),
+                    );
+                  },
+                ),
+        ),
       ),
     );
   }
@@ -166,6 +195,7 @@ class _EmptyVideoState extends StatelessWidget {
 class _VideoReel extends StatefulWidget {
   final Car car;
   final bool isActive;
+  final bool pageActive;
   final bool muted;
   final VoidCallback onToggleMute;
   final String? authorName;
@@ -177,6 +207,7 @@ class _VideoReel extends StatefulWidget {
     Key? key,
     required this.car,
     required this.isActive,
+    required this.pageActive,
     required this.muted,
     required this.onToggleMute,
     required this.authorName,
@@ -189,27 +220,41 @@ class _VideoReel extends StatefulWidget {
   State<_VideoReel> createState() => _VideoReelState();
 }
 
-class _VideoReelState extends State<_VideoReel> {
+class _VideoReelState extends State<_VideoReel>
+    with SingleTickerProviderStateMixin {
   VideoPlayerController? _controller;
   bool _initialized = false;
   bool _hasVideo = false;
-  bool _subscribed = false;
+
+  // Hold-to-watch-clean: hides all overlays while pressing.
+  bool _uiHidden = false;
+
+  // Center heart animation on double-tap.
+  late final AnimationController _likeAnim;
 
   static const _accentBlue = Color(0xFF4DA6FF);
 
-  // Placeholder engagement numbers for the demo UI — replace with real data.
-  late final int _likeBase = 800 + (widget.car.id.hashCode.abs() % 24000);
+  // Placeholder engagement numbers — comments/share/save aren't wired up yet.
   late final int _commentCount = 20 + (widget.car.id.hashCode.abs() % 900);
   late final int _saveBase = 100 + ((widget.car.id.hashCode.abs() ~/ 7) % 3000);
 
   @override
   void initState() {
     super.initState();
+    _likeAnim =
+        AnimationController(vsync: this, duration: const Duration(milliseconds: 850));
     _setupVideo();
+
+    // Подтягиваем реальное состояние лайка/подписки из Firestore.
+    context.read<CarsProvider>().loadLikeState(widget.car.id);
+    context.read<SubscriptionsProvider>().loadSubscription(widget.car.ownerId);
+
+    // Если карточка сразу активна при первом построении — засчитываем просмотр.
+    if (widget.isActive) {
+      context.read<CarsProvider>().incrementView(widget.car.id);
+    }
   }
 
-  // Autoplays as soon as the reel becomes the active page (i.e. when you
-  // enter the video tab or swipe to it).
   void _setupVideo() {
     final path = widget.car.videoPath;
     final isNetwork = path != null && path.startsWith('http');
@@ -225,32 +270,38 @@ class _VideoReelState extends State<_VideoReel> {
     c.initialize().then((_) {
       if (!mounted) return;
       c.setLooping(true);
-      c.setVolume(widget.muted ? 0.0 : 1.0); // respect global mute
+      c.setVolume(widget.muted ? 0.0 : 1.0);
       setState(() => _initialized = true);
-      if (widget.isActive) c.play();
+      _syncPlayback();
     }).catchError((_) {
       if (mounted) setState(() => _hasVideo = false);
     });
   }
 
+  // Plays only when this reel is the active page AND the page is visible.
+  void _syncPlayback() {
+    final c = _controller;
+    if (c == null || !_initialized) return;
+    final shouldPlay = widget.isActive && widget.pageActive;
+    if (shouldPlay) {
+      if (!c.value.isPlaying) c.play();
+    } else {
+      if (c.value.isPlaying) c.pause();
+      if (!widget.isActive) c.seekTo(Duration.zero);
+    }
+  }
+
   @override
   void didUpdateWidget(covariant _VideoReel oldWidget) {
     super.didUpdateWidget(oldWidget);
-
-    // Play / pause when this reel becomes (in)active.
-    if (widget.isActive != oldWidget.isActive &&
-        _controller != null &&
-        _initialized) {
-      if (widget.isActive) {
-        _controller!.play();
-      } else {
-        _controller!
-          ..pause()
-          ..seekTo(Duration.zero);
-      }
+    if (widget.isActive != oldWidget.isActive ||
+        widget.pageActive != oldWidget.pageActive) {
+      _syncPlayback();
     }
-
-    // React to the global mute toggle.
+    // Засчитываем просмотр каждый раз, когда реел становится активным.
+    if (widget.isActive && !oldWidget.isActive) {
+      context.read<CarsProvider>().incrementView(widget.car.id);
+    }
     if (widget.muted != oldWidget.muted && _controller != null) {
       _controller!.setVolume(widget.muted ? 0.0 : 1.0);
     }
@@ -258,13 +309,14 @@ class _VideoReelState extends State<_VideoReel> {
 
   @override
   void dispose() {
+    _likeAnim.dispose();
     _controller?.dispose();
     super.dispose();
   }
 
-  // Tap the video to pause / resume. (Do the work first, then setState with
-  // an empty body — pause()/play() return Futures and can't go inside setState.)
+  // Tap the video to pause / resume.
   void _togglePlay() {
+    FocusManager.instance.primaryFocus?.unfocus();
     final c = _controller;
     if (c == null || !_initialized) return;
     if (c.value.isPlaying) {
@@ -275,13 +327,23 @@ class _VideoReelState extends State<_VideoReel> {
     setState(() {});
   }
 
+  // Double-tap → like (never unlikes) + heart burst.
+  void _onDoubleTap() {
+    final cars = context.read<CarsProvider>();
+    if (!cars.isLikedByMe(widget.car.id)) {
+      cars.toggleLike(widget.car.id);
+    }
+    _likeAnim.forward(from: 0);
+  }
+
   Future<void> _openDetail() async {
+    FocusManager.instance.primaryFocus?.unfocus();
     _controller?.pause();
     await Navigator.push(
       context,
       MaterialPageRoute(builder: (_) => CarDetailPage(car: widget.car)),
     );
-    if (mounted && widget.isActive) _controller?.play();
+    if (mounted) _syncPlayback();
   }
 
   void _soon(String msg) => ScaffoldMessenger.of(context).showSnackBar(
@@ -294,28 +356,42 @@ class _VideoReelState extends State<_VideoReel> {
     return Stack(
       fit: StackFit.expand,
       children: [
-        // 1. Full video (contain → whole clip visible, black bars on the sides)
+        // 1. Full video + gestures (tap = pause, double = like, hold = clean)
         GestureDetector(
           onTap: _hasVideo ? _togglePlay : _openDetail,
+          onDoubleTap: _onDoubleTap,
+          onLongPressStart: (_) => setState(() => _uiHidden = true),
+          onLongPressEnd: (_) => setState(() => _uiHidden = false),
+          onLongPressCancel: () => setState(() => _uiHidden = false),
           child: _mediaLayer(),
         ),
 
-        // 2. Center play indicator (visible only when paused)
-        if (_hasVideo)
+        // 2. Center play indicator (only when paused, and UI visible)
+        if (_hasVideo && !_uiHidden)
           IgnorePointer(child: Center(child: _centerPlay())),
 
-        // 3. UI overlay (top icons + bottom content)
-        SafeArea(
-          child: Padding(
-            padding: EdgeInsets.symmetric(horizontal: 4.w),
-            child: Column(
-              children: [
-                SizedBox(height: 0.5.h),
-                _topBar(),
-                const Spacer(),
-                _bottomOverlay(car),
-                SizedBox(height: 1.h),
-              ],
+        // 3. Double-tap heart burst (always available, above the video)
+        _likeBurst(),
+
+        // 4. UI overlay — fades out while holding to watch clean.
+        IgnorePointer(
+          ignoring: _uiHidden,
+          child: AnimatedOpacity(
+            opacity: _uiHidden ? 0.0 : 1.0,
+            duration: const Duration(milliseconds: 200),
+            child: SafeArea(
+              child: Padding(
+                padding: EdgeInsets.symmetric(horizontal: 4.w),
+                child: Column(
+                  children: [
+                    SizedBox(height: 0.5.h),
+                    _topBar(),
+                    const Spacer(),
+                    _bottomOverlay(car),
+                    SizedBox(height: 1.h),
+                  ],
+                ),
+              ),
             ),
           ),
         ),
@@ -342,8 +418,10 @@ class _VideoReelState extends State<_VideoReel> {
           const Center(
             child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
           ),
-        // Top + bottom scrims so overlay text/icons stay readable.
-        Positioned.fill(
+        // Scrims fade with the UI so holding gives a fully clean view.
+        AnimatedOpacity(
+          opacity: _uiHidden ? 0.0 : 1.0,
+          duration: const Duration(milliseconds: 200),
           child: DecoratedBox(
             decoration: BoxDecoration(
               gradient: LinearGradient(
@@ -358,6 +436,7 @@ class _VideoReelState extends State<_VideoReel> {
                 stops: const [0.0, 0.18, 0.5, 1.0],
               ),
             ),
+            child: const SizedBox.expand(),
           ),
         ),
       ],
@@ -367,7 +446,6 @@ class _VideoReelState extends State<_VideoReel> {
   Widget _poster() {
     final photos = widget.car.photoPaths;
     if (photos.isEmpty) return Container(color: const Color(0xFF111111));
-    // Poster shown full too (contain), so nothing is cut off.
     return Center(child: _image(photos.first, fit: BoxFit.contain));
   }
 
@@ -396,6 +474,35 @@ class _VideoReelState extends State<_VideoReel> {
           shape: BoxShape.circle,
         ),
         child: Icon(Icons.play_arrow_rounded, color: Colors.white, size: 9.w),
+      ),
+    );
+  }
+
+  Widget _likeBurst() {
+    return IgnorePointer(
+      child: Center(
+        child: AnimatedBuilder(
+          animation: _likeAnim,
+          builder: (_, __) {
+            final v = _likeAnim.value;
+            if (v == 0) return const SizedBox.shrink();
+            final scale =
+                0.5 + Curves.easeOutBack.transform((v * 1.6).clamp(0.0, 1.0)) * 0.7;
+            final opacity = v < 0.65 ? 1.0 : (1 - (v - 0.65) / 0.35);
+            return Opacity(
+              opacity: opacity.clamp(0.0, 1.0),
+              child: Transform.scale(
+                scale: scale,
+                child: Icon(
+                  Icons.favorite,
+                  color: Colors.red,
+                  size: 30.w,
+                  shadows: const [Shadow(color: Colors.black45, blurRadius: 18)],
+                ),
+              ),
+            );
+          },
+        ),
       ),
     );
   }
@@ -460,7 +567,7 @@ class _VideoReelState extends State<_VideoReel> {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _creatorRow(),
+          _creatorRow(car),
           SizedBox(height: 1.2.h),
           Text(
             car.name,
@@ -517,13 +624,17 @@ class _VideoReelState extends State<_VideoReel> {
     );
   }
 
-  Widget _creatorRow() {
+  Widget _creatorRow(Car car) {
     final name = (widget.authorName != null && widget.authorName!.isNotEmpty)
         ? widget.authorName!
         : 'Автор';
     final initials = name.isNotEmpty ? name[0].toUpperCase() : 'A';
     final hasAvatar =
         widget.authorAvatarUrl != null && widget.authorAvatarUrl!.isNotEmpty;
+    final myUid = FirebaseAuth.instance.currentUser?.uid;
+    final isMyOwnCar = myUid != null && myUid == car.ownerId;
+    final subscribed = context.watch<SubscriptionsProvider>().isSubscribed(car.ownerId);
+
     return Row(
       children: [
         Container(
@@ -568,54 +679,57 @@ class _VideoReelState extends State<_VideoReel> {
         SizedBox(width: 1.w),
         Icon(Icons.verified_rounded, size: 1.9.h, color: _accentBlue),
         SizedBox(width: 2.w),
-        GestureDetector(
-          onTap: () => setState(() => _subscribed = !_subscribed),
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 150),
-            padding: EdgeInsets.symmetric(horizontal: 3.5.w, vertical: 0.7.h),
-            decoration: BoxDecoration(
-              color: _subscribed ? Colors.transparent : Colors.white,
-              borderRadius: BorderRadius.circular(6.w),
-              border: Border.all(color: Colors.white, width: 1.4),
-            ),
-            child: Text(
-              _subscribed ? 'Вы подписаны' : 'Подписаться',
-              style: TextStyle(
-                fontSize: 11.sp,
-                fontWeight: FontWeight.w700,
-                color: _subscribed ? Colors.white : Colors.black,
+        // Нельзя подписаться на самого себя.
+        if (!isMyOwnCar)
+          GestureDetector(
+            onTap: () => context.read<SubscriptionsProvider>().toggleSubscribe(car.ownerId),
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 150),
+              padding: EdgeInsets.symmetric(horizontal: 3.5.w, vertical: 0.7.h),
+              decoration: BoxDecoration(
+                color: subscribed ? Colors.transparent : Colors.white,
+                borderRadius: BorderRadius.circular(6.w),
+                border: Border.all(color: Colors.white, width: 1.4),
+              ),
+              child: Text(
+                subscribed ? 'Вы подписаны' : 'Подписаться',
+                style: TextStyle(
+                  fontSize: 11.sp,
+                  fontWeight: FontWeight.w700,
+                  color: subscribed ? Colors.white : Colors.black,
+                ),
               ),
             ),
           ),
-        ),
       ],
     );
   }
 
   // ── Right action rail ───────────────────────────────────────────
   Widget _actionRail(Car car) {
-    final fav = context.watch<FavoritesProvider>().isFavorite(car);
+    final cars = context.watch<CarsProvider>();
+    final liked = cars.isLikedByMe(car.id);
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
         _railButton(
-          icon: fav ? Icons.thumb_up_rounded : Icons.thumb_up_off_alt_rounded,
-          color: fav ? _accentBlue : Colors.white,
-          text: _fmtCount(_likeBase + (fav ? 1 : 0)),
-          onTap: () => context.read<FavoritesProvider>().toggleFavorite(car),
+          icon: liked ? Icons.favorite_rounded : Icons.favorite_border_rounded,
+          color: liked ? Colors.red : Colors.white,
+          text: _fmtCount(car.likesCount),
+          onTap: () => context.read<CarsProvider>().toggleLike(car.id),
         ),
         SizedBox(height: 2.2.h),
         _railButton(
           icon: Icons.mode_comment_rounded,
           color: Colors.white,
-          text: _fmtCount(_commentCount),
+          text: _fmtCount(_commentCount), // заглушка
           onTap: _openDetail,
         ),
         SizedBox(height: 2.2.h),
         _railButton(
           icon: Icons.reply_rounded,
           color: Colors.white,
-          text: 'Поделиться',
+          text: 'Поделиться', // заглушка
           onTap: () => _soon('Скоро можно будет делиться объявлением'),
         ),
         SizedBox(height: 2.2.h),
@@ -624,7 +738,7 @@ class _VideoReelState extends State<_VideoReel> {
               ? Icons.bookmark_rounded
               : Icons.bookmark_border_rounded,
           color: Colors.white,
-          text: _fmtCount(_saveBase + (widget.saved ? 1 : 0)),
+          text: _fmtCount(_saveBase + (widget.saved ? 1 : 0)), // заглушка
           onTap: widget.onToggleSave,
         ),
         SizedBox(height: 2.2.h),
@@ -748,8 +862,8 @@ class _VideoReelState extends State<_VideoReel> {
                     _statDivider(),
                     _stat(Icons.speed_outlined, '${car.km} км', 'Пробег'),
                     _statDivider(),
-                    _stat(Icons.local_gas_station_outlined,
-                        '${car.engineCapacity} л', 'Объём'),
+                    _stat(Icons.remove_red_eye_outlined,
+                        _fmtCount(car.viewsCount), 'Просмотры'),
                   ],
                 ),
               ],
