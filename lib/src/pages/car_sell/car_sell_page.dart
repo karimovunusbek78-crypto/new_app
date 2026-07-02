@@ -16,7 +16,7 @@ class CarSellPage extends StatefulWidget {
 class _CarSellPageState extends State<CarSellPage>
     with TickerProviderStateMixin {
   static const _accentDark = Color(0xFF111111);
-  static const _accentBlue = Color(0xFF5B4FD9);
+  static const _accentBlue = Color.fromARGB(255, 0, 0, 0);
   static const _whatsappNumber = '996555510225';
   static const _phoneNumber = '+996555510225';
   static const _telegramHandle = '@fahriddin151515';
@@ -142,7 +142,7 @@ class _CarSellPageState extends State<CarSellPage>
       backgroundColor: Colors.white,
       body: SafeArea(
         child: Consumer<CarSellPermissionNotifier>(
-          builder: (context, notifier, _) {
+          builder: (context, notifier, _){
             switch (notifier.state) {
               case PublishPermissionState.loading:
                 return _buildLoadingScreen();
@@ -183,7 +183,7 @@ class _CarSellPageState extends State<CarSellPage>
         padding: EdgeInsets.symmetric(vertical: 2.h),
         child: Column(
           children: [
-            // Back button
+
             Align(
               alignment: Alignment.centerLeft,
               child: GestureDetector(
