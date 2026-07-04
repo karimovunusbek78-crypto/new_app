@@ -1,7 +1,10 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:video_player/video_player.dart';
 import 'package:provider/provider.dart';
+import 'package:firebase_storage/firebase_storage.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:new_app/src/pages/autoslon/permission/publish_permission.dart';
 import 'package:new_app/src/pages/home/models/car.dart';
 import 'package:new_app/src/pages/home/providers/cars_provider.dart';
@@ -64,6 +67,16 @@ class _CarPublishPageState extends State<CarPublishPage>
   final List<XFile> _photos = [];
   XFile? _video;
 
+  // Live preview for the picked video (first frame + play/pause + duration).
+  // Rebuilt whenever a new video is chosen and torn down on remove/replace.
+  VideoPlayerController? _videoPreviewController;
+  Duration? _videoDuration;
+  bool _videoPreviewReady = false;
+
+  // True while photos/video are being uploaded to Firebase Storage and the
+  // Firestore document is being written — blocks the submit button.
+  bool _isUploading = false;
+
   // Accent color — publish actions are black, matching the autoslon flow.
   static const _accent = Color(0xFF111111);
 
@@ -82,6 +95,7 @@ class _CarPublishPageState extends State<CarPublishPage>
   @override
   void dispose() {
     _introController.dispose();
+    _videoPreviewController?.dispose();
     _nameController.dispose();
     _yearController.dispose();
     _kmController.dispose();
@@ -146,12 +160,61 @@ class _CarPublishPageState extends State<CarPublishPage>
     try {
       final x = await _picker.pickVideo(
           source: source, maxDuration: const Duration(minutes: 2));
-      if (x != null) setState(() => _video = x);
+      if (x != null) await _initVideoPreview(x);
     } catch (_) {}
   }
 
+  // Initializes a preview controller for the freshly picked video so the
+  // seller can see exactly what buyers will see in the feed.
+  Future<void> _initVideoPreview(XFile file) async {
+    await _disposeVideoPreview();
+    final controller = VideoPlayerController.file(File(file.path));
+    try {
+      await controller.initialize();
+      controller.setLooping(true);
+      if (!mounted) {
+        controller.dispose();
+        return;
+      }
+      setState(() {
+        _video = file;
+        _videoPreviewController = controller;
+        _videoDuration = controller.value.duration;
+        _videoPreviewReady = true;
+      });
+    } catch (_) {
+      controller.dispose();
+      // Still keep the file even if the preview couldn't initialize.
+      if (mounted) {
+        setState(() {
+          _video = file;
+          _videoPreviewReady = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _disposeVideoPreview() async {
+    final c = _videoPreviewController;
+    _videoPreviewController = null;
+    _videoPreviewReady = false;
+    _videoDuration = null;
+    await c?.pause();
+    await c?.dispose();
+  }
+
+  String _fmtDuration(Duration d) {
+    final m = d.inMinutes;
+    final s = d.inSeconds % 60;
+    return '$m:${s.toString().padLeft(2, '0')}';
+  }
+
   void _removePhoto(int i) => setState(() => _photos.removeAt(i));
-  void _removeVideo() => setState(() => _video = null);
+
+  void _removeVideo() {
+    _disposeVideoPreview();
+    setState(() => _video = null);
+  }
 
   void _showPhotoSheet() => showModalBottomSheet(
         context: context,
@@ -190,6 +253,8 @@ class _CarPublishPageState extends State<CarPublishPage>
       );
 
   Future<void> _submit() async {
+    if (_isUploading) return;
+
     if (!_formKey.currentState!.validate()) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Заполните все поля')),
@@ -216,6 +281,14 @@ class _CarPublishPageState extends State<CarPublishPage>
       return;
     }
 
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Пользователь не авторизован')),
+      );
+      return;
+    }
+
     // Capture providers before any await (avoids using context across gaps).
     final notifier = context.read<CarSellPermissionNotifier>();
     final carsProvider = context.read<CarsProvider>();
@@ -224,43 +297,76 @@ class _CarPublishPageState extends State<CarPublishPage>
     final confirmed = await showPublishConfirmDialog(context);
     if (!confirmed || !mounted) return;
 
-    final car = Car(
-      id: DateTime.now().millisecondsSinceEpoch.toString(),
-      name: _nameController.text.trim(),
-      year: _yearController.text.trim(),
-      km: _kmController.text.trim(),
-      price: _priceController.text.trim(),
-      transmission: _transmission!,
-      fuelType: _fuelType!,
-      engineCapacity: _engineController.text.trim(),
-      bodyType: _bodyType!,
-      color: _colorController.text.trim(),
-      location: _locationController.text.trim(),
-      ownersCount: _ownersController.text.trim(),
-      description: _descController.text.trim(),
-      driveType: _driveType!,
-      condition: _condition!,
-      photoPaths: _photos.map((x) => x.path).toList(),
-      videoPath: _video?.path,
-      priceNegotiable: _priceNegotiable,
-      changesDescription: _changesController.text.trim(),
-      phone: _phoneController.text.trim(),
-      contactWhatsapp: _contactWhatsapp,
-      contactTelegram: _contactTelegram,
-    );
+    final carId = DateTime.now().millisecondsSinceEpoch.toString();
 
-    // TODO: upload _photos / _video (e.g. to Cloudinary or Supabase) and
-    // store the resulting URLs instead of local paths, if needed elsewhere.
+    setState(() => _isUploading = true);
 
-    // Push into the in-memory store so it shows up on Home / Video tabs immediately.
-    carsProvider.addCar(car);
+    try {
+      final storage = FirebaseStorage.instance;
 
-    // Consume the one-time permission, then return the new car. After this the
-    // user must request permission again for the next listing.
-    await notifier.consume();
-    if (!mounted) return;
+      // ── Загрузка фото в Storage ─────────────────────────────
+      final photoUrls = <String>[];
+      for (int i = 0; i < _photos.length; i++) {
+        final file = File(_photos[i].path);
+        final ref = storage.ref('cars/${user.uid}/$carId/photo_$i.jpg');
+        await ref.putFile(file, SettableMetadata(contentType: 'image/jpeg'));
+        photoUrls.add(await ref.getDownloadURL());
+      }
 
-    Navigator.pop(context, car);
+      // ── Загрузка видео в Storage (если есть) ─────────────────
+      String? videoUrl;
+      if (_video != null) {
+        final file = File(_video!.path);
+        final ref = storage.ref('cars/${user.uid}/$carId/video.mp4');
+        await ref.putFile(file, SettableMetadata(contentType: 'video/mp4'));
+        videoUrl = await ref.getDownloadURL();
+      }
+
+      final car = Car(
+        id: carId,
+        ownerId: user.uid,
+        name: _nameController.text.trim(),
+        year: _yearController.text.trim(),
+        km: _kmController.text.trim(),
+        price: _priceController.text.trim(),
+        transmission: _transmission!,
+        fuelType: _fuelType!,
+        engineCapacity: _engineController.text.trim(),
+        bodyType: _bodyType!,
+        color: _colorController.text.trim(),
+        location: _locationController.text.trim(),
+        ownersCount: _ownersController.text.trim(),
+        description: _descController.text.trim(),
+        driveType: _driveType!,
+        condition: _condition!,
+        photoPaths: photoUrls, // Storage-URL, не локальные пути
+        videoPath: videoUrl,   // Storage-URL
+        priceNegotiable: _priceNegotiable,
+        changesDescription: _changesController.text.trim(),
+        phone: _phoneController.text.trim(),
+        contactWhatsapp: _contactWhatsapp,
+        contactTelegram: _contactTelegram,
+      );
+
+      // Пишет документ в Firestore; список на Home/Video обновится сам
+      // через живую подписку CarsProvider.
+      await carsProvider.publishCar(car);
+
+      // Consume the one-time permission, then return the new car. After this
+      // the user must request permission again for the next listing.
+      await notifier.consume();
+      if (!mounted) return;
+
+      Navigator.pop(context, car);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Ошибка публикации: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isUploading = false);
+    }
   }
 
   @override
@@ -591,7 +697,8 @@ class _CarPublishPageState extends State<CarPublishPage>
                       color: _accent,
                       fontWeight: FontWeight.w700)),
               SizedBox(height: 0.4.h),
-              Text('Снять на камеру или выбрать из галереи',
+              Text('Обзор со всех сторон · до 2 минут',
+                  textAlign: TextAlign.center,
                   style: TextStyle(
                       fontSize: 11.sp, color: const Color(0xFF9A9AA0))),
             ],
@@ -599,6 +706,8 @@ class _CarPublishPageState extends State<CarPublishPage>
         ),
       );
     }
+
+    final ready = _videoPreviewReady && _videoPreviewController != null;
     return Container(
       padding: EdgeInsets.all(3.w),
       decoration: BoxDecoration(
@@ -606,39 +715,144 @@ class _CarPublishPageState extends State<CarPublishPage>
         borderRadius: BorderRadius.circular(4.w),
         border: Border.all(color: const Color(0xFFE2E2E6), width: 1.4),
       ),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Container(
-            width: 14.w,
-            height: 14.w,
-            decoration: BoxDecoration(
-                color: _accent, borderRadius: BorderRadius.circular(3.w)),
-            child:
-                Icon(Icons.play_arrow_rounded, color: Colors.white, size: 4.h),
+          AspectRatio(
+            aspectRatio:
+                ready ? _videoPreviewController!.value.aspectRatio : 16 / 9,
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(3.w),
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  if (ready)
+                    GestureDetector(
+                      onTap: () => setState(() {
+                        final c = _videoPreviewController!;
+                        c.value.isPlaying ? c.pause() : c.play();
+                      }),
+                      child: VideoPlayer(_videoPreviewController!),
+                    )
+                  else
+                    Container(
+                      color: const Color(0xFF111111),
+                      child: const Center(
+                        child: CircularProgressIndicator(
+                            color: Colors.white, strokeWidth: 2),
+                      ),
+                    ),
+                  if (ready)
+                    IgnorePointer(
+                      child: Center(
+                        child: AnimatedOpacity(
+                          opacity: _videoPreviewController!.value.isPlaying
+                              ? 0.0
+                              : 1.0,
+                          duration: const Duration(milliseconds: 200),
+                          child: Container(
+                            width: 13.w,
+                            height: 13.w,
+                            decoration: BoxDecoration(
+                                color: Colors.black.withOpacity(0.4),
+                                shape: BoxShape.circle),
+                            child: Icon(Icons.play_arrow_rounded,
+                                color: Colors.white, size: 7.w),
+                          ),
+                        ),
+                      ),
+                    ),
+                  if (_videoDuration != null)
+                    Positioned(
+                      right: 2.w,
+                      bottom: 1.h,
+                      child: Container(
+                        padding: EdgeInsets.symmetric(
+                            horizontal: 2.w, vertical: 0.3.h),
+                        decoration: BoxDecoration(
+                            color: Colors.black.withOpacity(0.6),
+                            borderRadius: BorderRadius.circular(2.w)),
+                        child: Text(_fmtDuration(_videoDuration!),
+                            style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 10.sp,
+                                fontWeight: FontWeight.w600)),
+                      ),
+                    ),
+                ],
+              ),
+            ),
           ),
-          SizedBox(width: 3.w),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('Видео добавлено',
-                    style: TextStyle(
-                        fontSize: 13.sp,
-                        fontWeight: FontWeight.w700,
-                        color: _accent)),
-                SizedBox(height: 0.4.h),
-                Text(_video!.name,
+          SizedBox(height: 1.5.h),
+          Row(
+            children: [
+              Icon(Icons.check_circle_rounded, color: _accent, size: 2.2.h),
+              SizedBox(width: 2.w),
+              Expanded(
+                child: Text(_video!.name,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                        fontSize: 11.sp, color: const Color(0xFF9A9AA0))),
-              ],
-            ),
+                        fontSize: 12.sp,
+                        color: const Color(0xFF6A6A70),
+                        fontWeight: FontWeight.w600)),
+              ),
+            ],
           ),
-          GestureDetector(
-            onTap: _removeVideo,
-            child: Icon(Icons.delete_outline,
-                color: const Color(0xFF8A8A90), size: 2.6.h),
+          SizedBox(height: 1.4.h),
+          Row(
+            children: [
+              Expanded(
+                child: _PressableScale(
+                  onTap: _showVideoSheet,
+                  child: Container(
+                    padding: EdgeInsets.symmetric(vertical: 1.4.h),
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                        color: const Color(0xFFF2F2F4),
+                        borderRadius: BorderRadius.circular(3.w)),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.autorenew_rounded, size: 2.h, color: _accent),
+                        SizedBox(width: 2.w),
+                        Text('Заменить',
+                            style: TextStyle(
+                                fontSize: 12.5.sp,
+                                fontWeight: FontWeight.w700,
+                                color: _accent)),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+              SizedBox(width: 3.w),
+              Expanded(
+                child: _PressableScale(
+                  onTap: _removeVideo,
+                  child: Container(
+                    padding: EdgeInsets.symmetric(vertical: 1.4.h),
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                        color: const Color(0xFFF2F2F4),
+                        borderRadius: BorderRadius.circular(3.w)),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.delete_outline,
+                            size: 2.h, color: const Color(0xFF8A8A90)),
+                        SizedBox(width: 2.w),
+                        Text('Удалить',
+                            style: TextStyle(
+                                fontSize: 12.5.sp,
+                                fontWeight: FontWeight.w700,
+                                color: const Color(0xFF8A8A90))),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ],
           ),
         ],
       ),
@@ -940,7 +1154,7 @@ class _CarPublishPageState extends State<CarPublishPage>
 
   Widget _submitButton() {
     return _AnimatedPressableButton(
-      onTap: _submit,
+      onTap: _isUploading ? () {} : _submit,
       child: Container(
         width: double.infinity,
         padding: EdgeInsets.symmetric(vertical: 2.2.h),
@@ -956,15 +1170,22 @@ class _CarPublishPageState extends State<CarPublishPage>
           ],
         ),
         alignment: Alignment.center,
-        child: Text(
-          'Опубликовать объявление',
-          style: TextStyle(
-            fontSize: 15.sp,
-            fontWeight: FontWeight.w700,
-            color: Colors.white,
-            letterSpacing: -0.2,
-          ),
-        ),
+        child: _isUploading
+            ? SizedBox(
+                width: 2.5.h,
+                height: 2.5.h,
+                child: const CircularProgressIndicator(
+                    color: Colors.white, strokeWidth: 2),
+              )
+            : Text(
+                'Опубликовать объявление',
+                style: TextStyle(
+                  fontSize: 15.sp,
+                  fontWeight: FontWeight.w700,
+                  color: Colors.white,
+                  letterSpacing: -0.2,
+                ),
+              ),
       ),
     );
   }
