@@ -1,9 +1,11 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:latlong2/latlong.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:http/http.dart' as http;
 import 'package:responsive_sizer/responsive_sizer.dart';
 
@@ -79,6 +81,7 @@ class _LocationAddPageState extends State<LocationAddPage>
   String _resolvedCity = '';
   late final TextEditingController _addressController;
   bool _geocoding = false;
+  bool _locating = false;
 
   // Location photos — max 2
   final List<XFile> _locPhotos = [];
@@ -219,6 +222,180 @@ class _LocationAddPageState extends State<LocationAddPage>
       const SnackBar(
           content: Text('Не удалось определить адрес. Попробуйте ещё раз.')),
     );
+  }
+
+  // ── Current location (с запросом разрешения) ──────────────────
+  Future<void> _goToMyLocation() async {
+    if (_locating) return;
+
+    // 1. Включена ли геолокация (GPS) на устройстве?
+    if (!await Geolocator.isLocationServiceEnabled()) {
+      if (!mounted) return;
+      final open = await _showPermissionDialog(
+        title: 'Геолокация выключена',
+        message:
+            'Чтобы определить, где вы находитесь, включите геолокацию (GPS) на устройстве.',
+        confirmText: 'Открыть настройки',
+      );
+      if (open == true) await Geolocator.openLocationSettings();
+      return;
+    }
+
+    // 2. Текущий статус разрешения
+    var permission = await Geolocator.checkPermission();
+
+    // Разрешение ещё не выдано — сначала спрашиваем пользователя,
+    // затем показываем системный запрос.
+    if (permission == LocationPermission.denied) {
+      if (!mounted) return;
+      final allow = await _showPermissionDialog(
+        title: 'Доступ к местоположению',
+        message:
+            'Разрешите доступ к геолокации, чтобы автоматически найти, где вы находитесь, и отметить точку на карте.',
+        confirmText: 'Разрешить',
+      );
+      if (allow != true) return; // пользователь отказался
+      permission = await Geolocator.requestPermission();
+    }
+
+    // Запрещено навсегда — ведём в системные настройки приложения.
+    if (permission == LocationPermission.deniedForever) {
+      if (!mounted) return;
+      final open = await _showPermissionDialog(
+        title: 'Доступ запрещён',
+        message:
+            'Доступ к геолокации запрещён. Откройте настройки приложения и разрешите его вручную.',
+        confirmText: 'Открыть настройки',
+      );
+      if (open == true) await Geolocator.openAppSettings();
+      return;
+    }
+
+    // Пользователь отклонил системный запрос
+    if (permission == LocationPermission.denied) return;
+
+    // 3. Разрешение есть — ищем и показываем местоположение
+    await _fetchAndShowLocation();
+  }
+
+  Future<void> _fetchAndShowLocation() async {
+    setState(() => _locating = true);
+    try {
+      // Последняя известная позиция приходит мгновенно — запасной вариант.
+      Position? pos = await Geolocator.getLastKnownPosition();
+
+      // Свежие координаты (до 20 сек). Если истёк таймаут, но есть
+      // last-known — используем её вместо ошибки.
+      try {
+        pos = await Geolocator.getCurrentPosition(
+          locationSettings: const LocationSettings(
+            accuracy: LocationAccuracy.medium, // быстрее ловит сигнал, чем high
+            timeLimit: Duration(seconds: 20),
+          ),
+        );
+      } on TimeoutException {
+        if (pos == null) {
+          _showLocationError(
+              'Не удалось поймать сигнал GPS. Попробуйте на открытом месте.');
+          return;
+        }
+      }
+
+      if (pos == null) {
+        _showLocationError('Не удалось определить местоположение.');
+        return;
+      }
+
+      final point = LatLng(pos.latitude, pos.longitude);
+      setState(() {
+        _activeCity = null;
+        _selectedPoint = point;
+        _addressController.text = '';
+      });
+      _flyTo(point, 16);
+      _reverseGeocode(point); // адрес подтянется автоматически
+    } catch (e) {
+      _showLocationError('Ошибка геолокации: $e');
+    } finally {
+      if (mounted) setState(() => _locating = false);
+    }
+  }
+
+  // Диалог-запрос разрешения (rationale) перед системным запросом.
+  Future<bool?> _showPermissionDialog({
+    required String title,
+    required String message,
+    required String confirmText,
+  }) {
+    return showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: Colors.white,
+        shape:
+            RoundedRectangleBorder(borderRadius: BorderRadius.circular(5.w)),
+        title: Row(
+          children: [
+            Container(
+              padding: EdgeInsets.all(2.2.w),
+              decoration: const BoxDecoration(
+                color: Color(0xFFF2F2F4),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(Icons.location_on, color: _accent, size: 2.6.h),
+            ),
+            SizedBox(width: 3.w),
+            Expanded(
+              child: Text(title,
+                  style: TextStyle(
+                      fontSize: 15.5.sp,
+                      fontWeight: FontWeight.w800,
+                      color: Colors.black)),
+            ),
+          ],
+        ),
+        content: Text(message,
+            style: TextStyle(
+                fontSize: 13.sp,
+                color: const Color(0xFF6A6A70),
+                height: 1.45)),
+        actionsPadding: EdgeInsets.fromLTRB(4.w, 0, 4.w, 1.8.h),
+        actions: [
+          GestureDetector(
+            onTap: () => Navigator.pop(ctx, false),
+            behavior: HitTestBehavior.opaque,
+            child: Padding(
+              padding: EdgeInsets.symmetric(horizontal: 3.w, vertical: 1.2.h),
+              child: Text('Отмена',
+                  style: TextStyle(
+                      fontSize: 14.sp,
+                      color: const Color(0xFF9A9AA0),
+                      fontWeight: FontWeight.w600)),
+            ),
+          ),
+          SizedBox(width: 1.w),
+          _PressableScale(
+            onTap: () => Navigator.pop(ctx, true),
+            child: Container(
+              padding: EdgeInsets.symmetric(horizontal: 5.w, vertical: 1.2.h),
+              decoration: BoxDecoration(
+                color: _accent,
+                borderRadius: BorderRadius.circular(3.w),
+              ),
+              child: Text(confirmText,
+                  style: TextStyle(
+                      fontSize: 14.sp,
+                      fontWeight: FontWeight.w700,
+                      color: Colors.white)),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showLocationError(String msg) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
   }
 
   // ── Place search ──────────────────────────────────────────────
@@ -691,14 +868,26 @@ class _LocationAddPageState extends State<LocationAddPage>
           ),
         ),
 
-        // Confirm / edit card
-        if (_selectedPoint != null)
-          Positioned(
-            left: 0,
-            right: 0,
-            bottom: 0,
-            child: SafeArea(top: false, child: _confirmCard()),
+        // Кнопка "моё местоположение" + карточка подтверждения
+        Positioned(
+          left: 0,
+          right: 0,
+          bottom: 0,
+          child: SafeArea(
+            top: false,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Padding(
+                  padding: EdgeInsets.only(right: 4.w, bottom: 1.2.h),
+                  child: _locateButton(),
+                ),
+                if (_selectedPoint != null) _confirmCard(),
+              ],
+            ),
           ),
+        ),
       ],
     );
   }
@@ -719,6 +908,34 @@ class _LocationAddPageState extends State<LocationAddPage>
           ],
         ),
         child: Icon(icon, color: Colors.black, size: 2.4.h),
+      ),
+    );
+  }
+
+  // "My location" button — shows a spinner while resolving GPS.
+  Widget _locateButton() {
+    return _PressableScale(
+      onTap: _goToMyLocation,
+      child: Container(
+        padding: EdgeInsets.all(2.6.w),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          shape: BoxShape.circle,
+          boxShadow: [
+            BoxShadow(
+                color: Colors.black.withOpacity(0.12),
+                blurRadius: 10,
+                offset: const Offset(0, 3)),
+          ],
+        ),
+        child: _locating
+            ? SizedBox(
+                width: 2.4.h,
+                height: 2.4.h,
+                child: CircularProgressIndicator(
+                    strokeWidth: 2, color: _accent),
+              )
+            : Icon(Icons.my_location, color: _accent, size: 2.4.h),
       ),
     );
   }
