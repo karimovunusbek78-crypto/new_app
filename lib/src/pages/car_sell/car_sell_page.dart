@@ -586,10 +586,7 @@ class _CarSellPageState extends State<CarSellPage>
                 ],
               ),
             ),
-
             SizedBox(height: 3.h),
-
-            // Footer text
             FadeTransition(
               opacity: _fadeAnimation,
               child: Padding(
