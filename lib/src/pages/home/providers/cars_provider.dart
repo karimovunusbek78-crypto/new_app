@@ -26,8 +26,6 @@ class CarsProvider extends ChangeNotifier {
 
   bool isLikedByMe(String carId) => _likedByMe[carId] ?? false;
 
-  /// Живая подписка на коллекцию cars — объявления появляются/пропадают
-  /// у всех пользователей автоматически, без перезапуска приложения.
   void _listenToCars() {
     _carsSub = _firestore
         .collection('cars')
@@ -53,7 +51,6 @@ class CarsProvider extends ChangeNotifier {
 
   Future<void> publishCar(Car car) async {
     await _firestore.collection('cars').doc(car.id).set(car.toFirestoreMap());
-    // Локально ничего вручную добавлять не нужно — прилетит само через snapshots().
   }
 
   Future<void> deleteCar(String carId, {required String reason}) async {
@@ -64,7 +61,6 @@ class CarsProvider extends ChangeNotifier {
       'deletedBy': FirebaseAuth.instance.currentUser?.uid,
     });
     await carRef.delete();
-    // И тут тоже — снапшот сам уберёт объявление из списка у всех.
   }
 
   Future<void> loadLikeState(String carId) async {
@@ -99,24 +95,26 @@ class CarsProvider extends ChangeNotifier {
         await likeRef.set({'likedAt': FieldValue.serverTimestamp()});
         await carRef.update({'likesCount': FieldValue.increment(1)});
       }
-      // likesCount на экране обновится сам через snapshots(), локально не трогаем.
     } catch (_) {
       _likedByMe[carId] = currentlyLiked;
       notifyListeners();
     }
   }
 
-  Future<void> incrementView(String carId) async {
+  /// [ownerId] — владелец объявления. Если сам автор смотрит своё видео,
+  /// просмотр не засчитывается.
+  Future<void> incrementView(String carId, String ownerId) async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid != null && uid == ownerId) return;
+
     final carRef = _firestore.collection('cars').doc(carId);
     await carRef.update({'viewsCount': FieldValue.increment(1)}).catchError((_) {});
-    // Отдельный лог просмотра — нужен только для подсчёта "просмотров сегодня"
-    // на странице статистики. Общий viewsCount на карточке эти записи не трогает.
     await carRef.collection('viewLog').add({
       'viewedAt': FieldValue.serverTimestamp(),
+      'viewerUid': uid,
     }).catchError((_) {});
   }
 
-  /// Считает, сколько раз объявление посмотрели с начала сегодняшнего дня.
   Future<int> viewsToday(String carId) async {
     final now = DateTime.now();
     final startOfDay = DateTime(now.year, now.month, now.day);
