@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import 'package:new_app/src/pages/home/providers/subscribtion_provider.dart';
 import 'package:new_app/src/pages/pages.dart';
 import 'package:new_app/src/video/profile/public_profile_page.dart';
@@ -13,7 +14,6 @@ import 'package:provider/provider.dart';
 import 'package:responsive_sizer/responsive_sizer.dart';
 import 'package:video_player/video_player.dart';
 import 'package:visibility_detector/visibility_detector.dart';
-
 import 'package:new_app/src/pages/home/models/car.dart';
 import 'package:new_app/src/pages/home/pages/car_detail_page.dart';
 import 'package:new_app/src/pages/home/providers/cars_provider.dart';
@@ -31,11 +31,13 @@ class VideoPage extends StatefulWidget {
 }
 
 class _VideoPageState extends State<VideoPage> with WidgetsBindingObserver {
-  final PageController _pageController = PageController();
-  int _currentPage = 0;
-
-  // Прыжок к initialCarId делаем один раз, как только список загрузится.
-  bool _didJumpToInitial = false;
+  // ФИКС #1: PageController создаётся СРАЗУ с нужным initialPage,
+  // без последующего jumpToPage(). Раньше PageView всегда стартовал
+  // со страницы 0, из-за чего Flutter успевал построить и запустить
+  // видео для первого элемента списка ДО прыжка на нужное авто —
+  // это удваивало сетевую нагрузку и вызывало "мигание" не того видео.
+  late final PageController _pageController;
+  late int _currentPage;
 
   bool _muted = false;
 
@@ -57,6 +59,16 @@ class _VideoPageState extends State<VideoPage> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+
+    // Считаем начальный индекс СИНХРОННО, до первого построения PageView.
+    // Это устраняет двойную загрузку видео (см. комментарий у _pageController).
+    final cars = context.read<CarsProvider>().carsWithVideo;
+    final targetId = widget.initialCarId;
+    final foundIndex =
+        targetId != null ? cars.indexWhere((c) => c.id == targetId) : -1;
+    _currentPage = foundIndex >= 0 ? foundIndex : 0;
+    _pageController = PageController(initialPage: _currentPage);
+
     _loadAuthor();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) FocusManager.instance.primaryFocus?.unfocus();
@@ -101,31 +113,9 @@ class _VideoPageState extends State<VideoPage> with WidgetsBindingObserver {
     super.dispose();
   }
 
-  void _maybeJumpToInitialCar(List<Car> cars) {
-    if (_didJumpToInitial) return;
-    final targetId = widget.initialCarId;
-    if (targetId == null || cars.isEmpty) {
-      _didJumpToInitial = true;
-      return;
-    }
-    final index = cars.indexWhere((c) => c.id == targetId);
-    _didJumpToInitial = true;
-    if (index > 0) {
-      // Ждём кадр, чтобы PageController уже был приаттачен к PageView.
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted) return;
-        _pageController.jumpToPage(index);
-        setState(() => _currentPage = index);
-      });
-    } else if (index == 0) {
-      setState(() => _currentPage = 0);
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     final cars = context.watch<CarsProvider>().carsWithVideo;
-    _maybeJumpToInitialCar(cars);
 
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: SystemUiOverlayStyle.light,
@@ -270,15 +260,41 @@ class _VideoReelState extends State<_VideoReel>
 
   static const _accentBlue = Color(0xFF4DA6FF);
 
+  // Данные ВЛАДЕЛЬЦА этого объявления (а не текущего пользователя).
+  // Раньше имя/аватар приходили из VideoPage, где грузился профиль
+  // залогиненного юзера — поэтому под чужим видео показывалось ваше имя.
+  String? _ownerName;
+  String? _ownerAvatarUrl;
+
+  // ФИКС #2: тяжёлые операции (Firestore-запросы, подписки, инкремент
+  // просмотров) раньше запускались в initState() для КАЖДОГО построенного
+  // reel — включая соседние страницы, которые PageView.builder строит
+  // заранее для плавного свайпа. Это создавало параллельную сетевую
+  // нагрузку одновременно с загрузкой нужного видео и ощущалось как
+  // "долго грузит". Теперь это грузится только когда reel становится
+  // активным, и не повторяется при повторной активации.
+  bool _heavyDataLoaded = false;
+
+  Future<void> _loadOwner() async {
+    try {
+      final doc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(widget.car.ownerId)
+          .get();
+      final data = doc.data();
+      final url = data?['avatarUrl'] as String?;
+      final name = data?['name'] as String?;
+      if (!mounted) return;
+      setState(() {
+        if (url != null && url.isNotEmpty) _ownerAvatarUrl = url;
+        if (name != null && name.isNotEmpty) _ownerName = name;
+      });
+    } catch (_) {/* offline / нет документа — покажем инициалы */}
+  }
+
   late final int _saveBase = 100 + ((widget.car.id.hashCode.abs() ~/ 7) % 3000);
 
   // ----- Счётчик комментариев (комментарии + все ответы) -----
-  // Работает БЕЗ collectionGroup и без индексов в консоли:
-  // 1) стрим комментариев верхнего уровня (живое обновление);
-  // 2) на каждый снапшот — агрегатный count() по подколлекции replies
-  //    каждого комментария (читается только число, не документы);
-  // 3) после закрытия шторки комментариев — принудительный пересчёт,
-  //    т.к. новый ОТВЕТ не меняет верхний уровень и стрим его не видит.
   int _commentsTotal = 0;
   StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _commentsSub;
   int _recountGeneration = 0; // защита от гонки старых/новых пересчётов
@@ -292,23 +308,39 @@ class _VideoReelState extends State<_VideoReel>
   @override
   void initState() {
     super.initState();
-    _likeAnim =
-        AnimationController(vsync: this, duration: const Duration(milliseconds: 850));
-    _setupVideo();
+    _likeAnim = AnimationController(
+        vsync: this, duration: const Duration(milliseconds: 850));
 
+    // Видео готовим заранее (даже для неактивного reel) — так соседнее
+    // видео уже готово к моменту свайпа и лента ощущается плавной.
+    // Firestore-запросы и инкремент просмотров — только для активного.
+    _setupVideo();
+    if (widget.isActive) {
+      _loadHeavyData();
+    }
+  }
+
+  /// Загружает всё, что нужно только активному reel: профиль владельца,
+  /// состояние лайка/подписки, счётчик комментариев, инкремент просмотра.
+  /// Защищено флагом _heavyDataLoaded, чтобы не выполняться повторно.
+  void _loadHeavyData() {
+    if (_heavyDataLoaded) return;
+    _heavyDataLoaded = true;
+
+    _loadOwner();
     context.read<CarsProvider>().loadLikeState(widget.car.id);
     context.read<SubscriptionsProvider>().loadSubscription(widget.car.ownerId);
 
-    _commentsSub = _commentsRef.snapshots().listen(
-      _recountFromSnapshot,
-      onError: (_) {/* offline и т.п. — оставляем последнее значение */},
-    );
+    _commentsSub ??= _commentsRef.snapshots().listen(
+          _recountFromSnapshot,
+          onError: (_) {/* offline и т.п. — оставляем последнее значение */},
+        );
 
-    if (widget.isActive) {
-      // Владелец, смотрящий своё же объявление, просмотр не увеличивает —
-      // это проверяется внутри incrementView.
-      context.read<CarsProvider>().incrementView(widget.car.id, widget.car.ownerId);
-    }
+    // Владелец, смотрящий своё же объявление, просмотр не увеличивает —
+    // это проверяется внутри incrementView.
+    context
+        .read<CarsProvider>()
+        .incrementView(widget.car.id, widget.car.ownerId);
   }
 
   Future<void> _recountFromSnapshot(
@@ -354,9 +386,33 @@ class _VideoReelState extends State<_VideoReel>
         (isNetwork || File(path).existsSync());
     if (!_hasVideo) return;
 
-    final c = isNetwork
-        ? VideoPlayerController.networkUrl(Uri.parse(path!))
-        : VideoPlayerController.file(File(path!));
+    if (isNetwork) {
+      _setupNetworkVideoCached(path!);
+    } else {
+      _setupLocalVideo(path!);
+    }
+  }
+
+  // ФИКС #3: видео скачивается через flutter_cache_manager и кэшируется
+  // на диске. При повторном открытии того же видео оно берётся из
+  // локального кэша почти мгновенно, вместо повторного скачивания с сети.
+  Future<void> _setupNetworkVideoCached(String url) async {
+    try {
+      final file = await DefaultCacheManager().getSingleFile(url);
+      if (!mounted) return;
+      _startController(VideoPlayerController.file(file));
+    } catch (_) {
+      // Если кэш-менеджер не смог скачать (например, оффлайн) —
+      // пробуем напрямую как раньше, в качестве запасного варианта.
+      _startController(VideoPlayerController.networkUrl(Uri.parse(url)));
+    }
+  }
+
+  void _setupLocalVideo(String path) {
+    _startController(VideoPlayerController.file(File(path)));
+  }
+
+  void _startController(VideoPlayerController c) {
     _controller = c;
     c.initialize().then((_) {
       if (!mounted) return;
@@ -389,7 +445,7 @@ class _VideoReelState extends State<_VideoReel>
       _syncPlayback();
     }
     if (widget.isActive && !oldWidget.isActive) {
-      context.read<CarsProvider>().incrementView(widget.car.id, widget.car.ownerId);
+      _loadHeavyData();
     }
     if (widget.muted != oldWidget.muted && _controller != null) {
       _controller!.setVolume(widget.muted ? 0.0 : 1.0);
@@ -587,21 +643,29 @@ class _VideoReelState extends State<_VideoReel>
   }
 
   // Сердце появляется в точке двойного тапа, а не по центру экрана.
+  //
+  // ВАЖНО: Positioned должен быть ПРЯМЫМ потомком Stack в дереве рендера.
+  // Раньше IgnorePointer оборачивал AnimatedBuilder СНАРУЖИ, и Positioned
+  // оказывался внутри поддерева IgnorePointer, а не сразу под Stack —
+  // это и вызывало "Incorrect use of ParentDataWidget". Теперь AnimatedBuilder
+  // возвращает Positioned напрямую (он — прямой child Stack), а IgnorePointer
+  // просто оборачивает содержимое ВНУТРИ Positioned, чтобы сердце
+  // по-прежнему не перехватывало тапы.
   Widget _likeBurst() {
-    return IgnorePointer(
-      child: AnimatedBuilder(
-        animation: _likeAnim,
-        builder: (_, __) {
-          final v = _likeAnim.value;
-          final position = _doubleTapPosition;
-          if (v == 0 || position == null) return const SizedBox.shrink();
-          final scale =
-              0.5 + Curves.easeOutBack.transform((v * 1.6).clamp(0.0, 1.0)) * 0.7;
-          final opacity = v < 0.65 ? 1.0 : (1 - (v - 0.65) / 0.35);
-          const iconSize = 90.0;
-          return Positioned(
-            left: (position.dx - iconSize / 2).clamp(0.0, double.infinity),
-            top: (position.dy - iconSize / 2).clamp(0.0, double.infinity),
+    return AnimatedBuilder(
+      animation: _likeAnim,
+      builder: (_, __) {
+        final v = _likeAnim.value;
+        final position = _doubleTapPosition;
+        if (v == 0 || position == null) return const SizedBox.shrink();
+        final scale =
+            0.5 + Curves.easeOutBack.transform((v * 1.6).clamp(0.0, 1.0)) * 0.7;
+        final opacity = v < 0.65 ? 1.0 : (1 - (v - 0.65) / 0.35);
+        const iconSize = 90.0;
+        return Positioned(
+          left: (position.dx - iconSize / 2).clamp(0.0, double.infinity),
+          top: (position.dy - iconSize / 2).clamp(0.0, double.infinity),
+          child: IgnorePointer(
             child: Opacity(
               opacity: opacity.clamp(0.0, 1.0),
               child: Transform.scale(
@@ -614,9 +678,9 @@ class _VideoReelState extends State<_VideoReel>
                 ),
               ),
             ),
-          );
-        },
-      ),
+          ),
+        );
+      },
     );
   }
 
@@ -741,12 +805,12 @@ class _VideoReelState extends State<_VideoReel>
   }
 
   Widget _creatorRow(Car car) {
-    final name = (widget.authorName != null && widget.authorName!.isNotEmpty)
-        ? widget.authorName!
+    final name = (_ownerName != null && _ownerName!.isNotEmpty)
+        ? _ownerName!
         : 'Автор';
     final initials = name.isNotEmpty ? name[0].toUpperCase() : 'A';
     final hasAvatar =
-        widget.authorAvatarUrl != null && widget.authorAvatarUrl!.isNotEmpty;
+        _ownerAvatarUrl != null && _ownerAvatarUrl!.isNotEmpty;
     final myUid = FirebaseAuth.instance.currentUser?.uid;
     final isMyOwnCar = myUid != null && myUid == car.ownerId;
     final subscribed = context.watch<SubscriptionsProvider>().isSubscribed(car.ownerId);
@@ -771,7 +835,7 @@ class _VideoReelState extends State<_VideoReel>
                   border: Border.all(color: Colors.white, width: 1.4),
                   image: hasAvatar
                       ? DecorationImage(
-                          image: NetworkImage(widget.authorAvatarUrl!),
+                          image: NetworkImage(_ownerAvatarUrl!),
                           fit: BoxFit.cover)
                       : null,
                 ),
@@ -848,9 +912,6 @@ class _VideoReelState extends State<_VideoReel>
           onTap: _toggleLikeSynced,
         ),
         SizedBox(height: 2.2.h),
-        // Реальный счётчик: комментарии верхнего уровня + ВСЕ ответы.
-        // Значение считается в _recountFromSnapshot (стрим + count()),
-        // и пересчитывается после закрытия шторки комментариев.
         _railButton(
           icon: Icons.mode_comment_rounded,
           color: Colors.white,
