@@ -7,8 +7,9 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:new_app/src/pages/home/providers/subscribtion_provider.dart';
 import 'package:new_app/src/pages/pages.dart';
-import 'package:new_app/src/video/profile/public_profile_page.dart';
 import 'package:new_app/src/video/video%20page/comments/comments_sheet.dart';
+import 'package:new_app/src/video/video%20page/page/video_analytics_page.dart';
+import 'package:new_app/src/video/video%20page/profile/user_stats_page.dart';
 import 'package:provider/provider.dart';
 import 'package:responsive_sizer/responsive_sizer.dart';
 import 'package:video_player/video_player.dart';
@@ -39,17 +40,11 @@ class _VideoPageState extends State<VideoPage> with WidgetsBindingObserver {
 
   bool _muted = false;
 
-  // ВАЖНО: изначально false. Раньше здесь стояло true, из-за чего первый
-  // ролик в PageView.builder успевал стартовать со звуком ещё до того,
-  // как VisibilityDetector успевал сообщить реальную видимость страницы
-  // (особенно если VideoPage держится живым в фоне, например в IndexedStack
-  // навигации). Это и был баг "звук включается сам при входе в приложение".
+  // ВАЖНО: изначально false — иначе первый ролик стартует со звуком
+  // до того, как VisibilityDetector сообщит реальную видимость страницы.
   bool _pageVisible = false;
   bool _appActive = true;
   bool get _pageActive => _pageVisible && _appActive;
-
-  String? _authorName;
-  String? _authorAvatarUrl;
 
   final Set<String> _saved = {};
 
@@ -57,9 +52,8 @@ class _VideoPageState extends State<VideoPage> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _loadAuthor();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) FocusManager.instance.primaryFocus?.unfocus();
+      if (mounted) _hideKeyboardHard();
     });
   }
 
@@ -69,29 +63,6 @@ class _VideoPageState extends State<VideoPage> with WidgetsBindingObserver {
     if (active != _appActive && mounted) {
       setState(() => _appActive = active);
     }
-  }
-
-  Future<void> _loadAuthor() async {
-    final user = FirebaseAuth.instance.currentUser;
-    _authorName = (user?.displayName != null && user!.displayName!.isNotEmpty)
-        ? user.displayName
-        : null;
-    if (user != null) {
-      try {
-        final doc = await FirebaseFirestore.instance
-            .collection('users')
-            .doc(user.uid)
-            .get();
-        final data = doc.data();
-        final url = data?['avatarUrl'] as String?;
-        final name = data?['name'] as String?;
-        if (url != null && url.isNotEmpty) _authorAvatarUrl = url;
-        if (_authorName == null && name != null && name.isNotEmpty) {
-          _authorName = name;
-        }
-      } catch (_) {/* offline / no doc — fall back to initials */}
-    }
-    if (mounted) setState(() {});
   }
 
   @override
@@ -140,7 +111,7 @@ class _VideoPageState extends State<VideoPage> with WidgetsBindingObserver {
             final visible = info.visibleFraction > 0.5;
             if (visible != _pageVisible) {
               _pageVisible = visible;
-              if (visible) FocusManager.instance.primaryFocus?.unfocus();
+              if (visible) _hideKeyboardHard();
               if (mounted) setState(() {});
             }
           },
@@ -160,8 +131,6 @@ class _VideoPageState extends State<VideoPage> with WidgetsBindingObserver {
                       pageActive: _pageActive,
                       muted: _muted,
                       onToggleMute: () => setState(() => _muted = !_muted),
-                      authorName: _authorName,
-                      authorAvatarUrl: _authorAvatarUrl,
                       saved: _saved.contains(car.id),
                       onToggleSave: () => setState(() {
                         if (_saved.contains(car.id)) {
@@ -177,6 +146,22 @@ class _VideoPageState extends State<VideoPage> with WidgetsBindingObserver {
       ),
     );
   }
+}
+
+/// КЛАВИАТУРА: жёсткое скрытие. Одного unfocus() недостаточно, потому что
+/// при возврате со страницы (pop) Flutter может ВОССТАНОВИТЬ фокус
+/// последнего текстового поля — и клавиатура всплывает сама. Поэтому:
+///  1) снимаем фокус сразу;
+///  2) явно говорим платформе спрятать клавиатуру (TextInput.hide);
+///  3) повторяем на следующем кадре — уже ПОСЛЕ того, как Flutter
+///     попытался восстановить фокус.
+void _hideKeyboardHard() {
+  FocusManager.instance.primaryFocus?.unfocus();
+  SystemChannels.textInput.invokeMethod('TextInput.hide');
+  WidgetsBinding.instance.addPostFrameCallback((_) {
+    FocusManager.instance.primaryFocus?.unfocus();
+    SystemChannels.textInput.invokeMethod('TextInput.hide');
+  });
 }
 
 class _EmptyVideoState extends StatelessWidget {
@@ -232,8 +217,6 @@ class _VideoReel extends StatefulWidget {
   final bool pageActive;
   final bool muted;
   final VoidCallback onToggleMute;
-  final String? authorName;
-  final String? authorAvatarUrl;
   final bool saved;
   final VoidCallback onToggleSave;
 
@@ -244,8 +227,6 @@ class _VideoReel extends StatefulWidget {
     required this.pageActive,
     required this.muted,
     required this.onToggleMute,
-    required this.authorName,
-    required this.authorAvatarUrl,
     required this.saved,
     required this.onToggleSave,
   }) : super(key: key);
@@ -262,8 +243,8 @@ class _VideoReelState extends State<_VideoReel>
 
   bool _uiHidden = false;
 
-  // Позиция двойного тапа — сердце теперь появляется там, где тапнул
-  // пользователь, а не всегда по центру экрана.
+  // Позиция двойного тапа — сердце появляется там, где тапнул
+  // пользователь, а не по центру экрана.
   Offset? _doubleTapPosition;
 
   late final AnimationController _likeAnim;
@@ -271,6 +252,14 @@ class _VideoReelState extends State<_VideoReel>
   static const _accentBlue = Color(0xFF4DA6FF);
 
   late final int _saveBase = 100 + ((widget.car.id.hashCode.abs() ~/ 7) % 3000);
+
+  // ── АВТОР РОЛИКА ─────────────────────────────────────────────────────
+  // БАГ-ФИКС: раньше имя/аватар брались из FirebaseAuth.currentUser —
+  // то есть у КАЖДОГО видео показывался ТЕКУЩИЙ пользователь, а не тот,
+  // кто опубликовал объявление. Теперь данные автора грузятся из
+  // users/{car.ownerId} — для каждого ролика свои.
+  String? _ownerName;
+  String? _ownerAvatarUrl;
 
   // ----- Счётчик комментариев (комментарии + все ответы) -----
   // Работает БЕЗ collectionGroup и без индексов в консоли:
@@ -292,9 +281,10 @@ class _VideoReelState extends State<_VideoReel>
   @override
   void initState() {
     super.initState();
-    _likeAnim =
-        AnimationController(vsync: this, duration: const Duration(milliseconds: 850));
+    _likeAnim = AnimationController(
+        vsync: this, duration: const Duration(milliseconds: 850));
     _setupVideo();
+    _loadOwner();
 
     context.read<CarsProvider>().loadLikeState(widget.car.id);
     context.read<SubscriptionsProvider>().loadSubscription(widget.car.ownerId);
@@ -307,7 +297,29 @@ class _VideoReelState extends State<_VideoReel>
     if (widget.isActive) {
       // Владелец, смотрящий своё же объявление, просмотр не увеличивает —
       // это проверяется внутри incrementView.
-      context.read<CarsProvider>().incrementView(widget.car.id, widget.car.ownerId);
+      context
+          .read<CarsProvider>()
+          .incrementView(widget.car.id, widget.car.ownerId);
+    }
+  }
+
+  /// Загружаем имя и аватар ВЛАДЕЛЬЦА объявления (не текущего юзера).
+  Future<void> _loadOwner() async {
+    try {
+      final doc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(widget.car.ownerId)
+          .get();
+      final data = doc.data();
+      if (!mounted) return;
+      setState(() {
+        final name = (data?['name'] as String?)?.trim();
+        final url = (data?['avatarUrl'] as String?)?.trim();
+        _ownerName = (name != null && name.isNotEmpty) ? name : null;
+        _ownerAvatarUrl = (url != null && url.isNotEmpty) ? url : null;
+      });
+    } catch (_) {
+      // offline / нет документа — покажем «Автор» и инициалы
     }
   }
 
@@ -339,9 +351,9 @@ class _VideoReelState extends State<_VideoReel>
   Future<void> _openComments() async {
     await CommentsSheet.show(context, widget.car.id);
     if (!mounted) return;
-    // КЛАВИАТУРА: после закрытия шторки комментариев жёстко снимаем фокус,
-    // чтобы поле ввода из шторки не "вернуло" клавиатуру на страницу видео.
-    FocusManager.instance.primaryFocus?.unfocus();
+    // КЛАВИАТУРА: после закрытия шторки комментариев жёстко прячем
+    // клавиатуру, чтобы поле ввода из шторки не «вернуло» её на видео.
+    _hideKeyboardHard();
     // Пользователь мог добавить ответы — пересчитываем после закрытия.
     _refreshCommentsCount();
   }
@@ -389,7 +401,9 @@ class _VideoReelState extends State<_VideoReel>
       _syncPlayback();
     }
     if (widget.isActive && !oldWidget.isActive) {
-      context.read<CarsProvider>().incrementView(widget.car.id, widget.car.ownerId);
+      context
+          .read<CarsProvider>()
+          .incrementView(widget.car.id, widget.car.ownerId);
     }
     if (widget.muted != oldWidget.muted && _controller != null) {
       _controller!.setVolume(widget.muted ? 0.0 : 1.0);
@@ -437,26 +451,47 @@ class _VideoReelState extends State<_VideoReel>
   }
 
   Future<void> _openDetail() async {
-    FocusManager.instance.primaryFocus?.unfocus();
+    _hideKeyboardHard();
     _controller?.pause();
     await Navigator.push(
       context,
       MaterialPageRoute(builder: (_) => CarDetailPage(car: widget.car)),
     );
     if (!mounted) return;
-    // КЛАВИАТУРА: снимаем фокус ПОСЛЕ возврата со страницы деталей —
-    // иначе Flutter мог восстановить фокус текстового поля (например,
-    // из шторки комментариев) и клавиатура всплывала сама.
-    FocusManager.instance.primaryFocus?.unfocus();
+    // КЛАВИАТУРА (баг-фикс): при возврате со страницы деталей Flutter мог
+    // восстановить фокус текстового поля и клавиатура всплывала сама.
+    // Жёстко прячем её и повторяем на следующем кадре.
+    _hideKeyboardHard();
     _syncPlayback();
   }
 
-  void _openProfile() {
-    FocusManager.instance.primaryFocus?.unfocus();
-    Navigator.push(
+  /// Тап по аватару/имени автора → публичная страница автора:
+  /// его публикации + общая статистика.
+  Future<void> _openProfile() async {
+    _hideKeyboardHard();
+    _controller?.pause();
+    await Navigator.push(
       context,
-      MaterialPageRoute(builder: (_) => PublicProfilePage(uid: widget.car.ownerId)),
+      MaterialPageRoute(
+          builder: (_) => UserStatsPage(uid: widget.car.ownerId)),
     );
+    if (!mounted) return;
+    _hideKeyboardHard();
+    _syncPlayback();
+  }
+
+  /// «Аналитика» на СВОЁМ видео → аналитика ИМЕННО ЭТОГО видео:
+  /// кто лайкнул, кто смотрел, когда опубликовано, просмотры за сегодня.
+  Future<void> _openVideoAnalytics() async {
+    _hideKeyboardHard();
+    _controller?.pause();
+    await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => VideoAnalyticsPage(car: widget.car)),
+    );
+    if (!mounted) return;
+    _hideKeyboardHard();
+    _syncPlayback();
   }
 
   void _soon(String msg) => ScaffoldMessenger.of(context).showSnackBar(
@@ -471,7 +506,8 @@ class _VideoReelState extends State<_VideoReel>
       children: [
         GestureDetector(
           onTap: _hasVideo ? _togglePlay : _openDetail,
-          onDoubleTapDown: (details) => _doubleTapPosition = details.localPosition,
+          onDoubleTapDown: (details) =>
+              _doubleTapPosition = details.localPosition,
           onDoubleTap: _onDoubleTap,
           onLongPressStart: (_) => setState(() => _uiHidden = true),
           onLongPressEnd: (_) => setState(() => _uiHidden = false),
@@ -525,7 +561,8 @@ class _VideoReelState extends State<_VideoReel>
           _poster(),
         if (_hasVideo && !_initialized)
           const Center(
-            child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+            child:
+                CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
           ),
         AnimatedOpacity(
           opacity: _uiHidden ? 0.0 : 1.0,
@@ -560,11 +597,13 @@ class _VideoReelState extends State<_VideoReel>
   Widget _image(String path, {BoxFit fit = BoxFit.cover}) {
     Widget fallback() => Container(color: const Color(0xFF111111));
     if (path.startsWith('http')) {
-      return Image.network(path, fit: fit, errorBuilder: (_, __, ___) => fallback());
+      return Image.network(path,
+          fit: fit, errorBuilder: (_, __, ___) => fallback());
     }
     final isFile = path.startsWith('/') || File(path).existsSync();
     if (isFile) {
-      return Image.file(File(path), fit: fit, errorBuilder: (_, __, ___) => fallback());
+      return Image.file(File(path),
+          fit: fit, errorBuilder: (_, __, ___) => fallback());
     }
     return Image.asset(path, fit: fit, errorBuilder: (_, __, ___) => fallback());
   }
@@ -595,8 +634,8 @@ class _VideoReelState extends State<_VideoReel>
           final v = _likeAnim.value;
           final position = _doubleTapPosition;
           if (v == 0 || position == null) return const SizedBox.shrink();
-          final scale =
-              0.5 + Curves.easeOutBack.transform((v * 1.6).clamp(0.0, 1.0)) * 0.7;
+          final scale = 0.5 +
+              Curves.easeOutBack.transform((v * 1.6).clamp(0.0, 1.0)) * 0.7;
           final opacity = v < 0.65 ? 1.0 : (1 - (v - 0.65) / 0.35);
           const iconSize = 90.0;
           return Positioned(
@@ -704,7 +743,9 @@ class _VideoReelState extends State<_VideoReel>
                   style: TextStyle(
                     color: Colors.white.withOpacity(0.9),
                     fontSize: 12.5.sp,
-                    shadows: const [Shadow(color: Colors.black54, blurRadius: 6)],
+                    shadows: const [
+                      Shadow(color: Colors.black54, blurRadius: 6)
+                    ],
                   ),
                 ),
               ],
@@ -717,7 +758,9 @@ class _VideoReelState extends State<_VideoReel>
                   style: TextStyle(
                     color: Colors.white.withOpacity(0.9),
                     fontSize: 12.5.sp,
-                    shadows: const [Shadow(color: Colors.black54, blurRadius: 6)],
+                    shadows: const [
+                      Shadow(color: Colors.black54, blurRadius: 6)
+                    ],
                   ),
                 ),
               ],
@@ -741,21 +784,22 @@ class _VideoReelState extends State<_VideoReel>
   }
 
   Widget _creatorRow(Car car) {
-    final name = (widget.authorName != null && widget.authorName!.isNotEmpty)
-        ? widget.authorName!
-        : 'Автор';
+    // Имя и аватар — ВЛАДЕЛЬЦА объявления (загружены в _loadOwner),
+    // а не текущего пользователя.
+    final name = _ownerName ?? 'Автор';
     final initials = name.isNotEmpty ? name[0].toUpperCase() : 'A';
-    final hasAvatar =
-        widget.authorAvatarUrl != null && widget.authorAvatarUrl!.isNotEmpty;
+    final hasAvatar = _ownerAvatarUrl != null && _ownerAvatarUrl!.isNotEmpty;
     final myUid = FirebaseAuth.instance.currentUser?.uid;
     final isMyOwnCar = myUid != null && myUid == car.ownerId;
-    final subscribed = context.watch<SubscriptionsProvider>().isSubscribed(car.ownerId);
-    final pending = context.watch<SubscriptionsProvider>().isPending(car.ownerId);
+    final subscribed =
+        context.watch<SubscriptionsProvider>().isSubscribed(car.ownerId);
+    final pending =
+        context.watch<SubscriptionsProvider>().isPending(car.ownerId);
 
     return Row(
       children: [
-        // Тап по аватару/имени теперь открывает профиль автора,
-        // а не сам объявление/видео.
+        // Тап по аватару/имени открывает страницу автора:
+        // его публикации + общая статистика.
         GestureDetector(
           onTap: _openProfile,
           behavior: HitTestBehavior.opaque,
@@ -771,7 +815,7 @@ class _VideoReelState extends State<_VideoReel>
                   border: Border.all(color: Colors.white, width: 1.4),
                   image: hasAvatar
                       ? DecorationImage(
-                          image: NetworkImage(widget.authorAvatarUrl!),
+                          image: NetworkImage(_ownerAvatarUrl!),
                           fit: BoxFit.cover)
                       : null,
                 ),
@@ -807,11 +851,44 @@ class _VideoReelState extends State<_VideoReel>
           ),
         ),
         SizedBox(width: 2.w),
-        if (!isMyOwnCar)
+        if (isMyOwnCar)
+          // СВОЁ видео: вместо «Подписаться» — кнопка «Аналитика»,
+          // которая открывает аналитику ИМЕННО ЭТОГО видео
+          // (кто лайкнул, кто смотрел, когда опубликовано).
+          GestureDetector(
+            onTap: _openVideoAnalytics,
+            child: Container(
+              padding: EdgeInsets.symmetric(horizontal: 3.5.w, vertical: 0.7.h),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(6.w),
+                border: Border.all(color: Colors.white, width: 1.4),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.bar_chart_rounded,
+                      size: 1.9.h, color: Colors.black),
+                  SizedBox(width: 1.w),
+                  Text(
+                    'Аналитика',
+                    style: TextStyle(
+                      fontSize: 11.sp,
+                      fontWeight: FontWeight.w700,
+                      color: Colors.black,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          )
+        else
           GestureDetector(
             onTap: pending
                 ? null
-                : () => context.read<SubscriptionsProvider>().toggleSubscribe(car.ownerId),
+                : () => context
+                    .read<SubscriptionsProvider>()
+                    .toggleSubscribe(car.ownerId),
             child: AnimatedContainer(
               duration: const Duration(milliseconds: 150),
               padding: EdgeInsets.symmetric(horizontal: 3.5.w, vertical: 0.7.h),
@@ -849,8 +926,6 @@ class _VideoReelState extends State<_VideoReel>
         ),
         SizedBox(height: 2.2.h),
         // Реальный счётчик: комментарии верхнего уровня + ВСЕ ответы.
-        // Значение считается в _recountFromSnapshot (стрим + count()),
-        // и пересчитывается после закрытия шторки комментариев.
         _railButton(
           icon: Icons.mode_comment_rounded,
           color: Colors.white,
@@ -953,7 +1028,8 @@ class _VideoReelState extends State<_VideoReel>
                   children: [
                     ClipRRect(
                       borderRadius: BorderRadius.circular(2.5.w),
-                      child: SizedBox(width: 13.w, height: 13.w, child: _thumb()),
+                      child:
+                          SizedBox(width: 13.w, height: 13.w, child: _thumb()),
                     ),
                     SizedBox(width: 3.w),
                     Expanded(
@@ -1059,7 +1135,9 @@ class _VideoReelState extends State<_VideoReel>
 
   String _specsPrimary(Car car) {
     final p = <String>[];
-    if (car.engineCapacity.trim().isNotEmpty) p.add('${car.engineCapacity.trim()} л');
+    if (car.engineCapacity.trim().isNotEmpty) {
+      p.add('${car.engineCapacity.trim()} л');
+    }
     if (car.fuelType.trim().isNotEmpty) p.add(car.fuelType.trim());
     if (car.driveType.trim().isNotEmpty) p.add(car.driveType.trim());
     return p.join('  •  ');
