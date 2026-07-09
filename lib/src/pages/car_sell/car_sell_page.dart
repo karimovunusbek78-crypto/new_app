@@ -431,7 +431,6 @@ class _CarSellPageState extends State<CarSellPage>
                 ),
               ),
             ),
-
             // Hero icon with scale + pulse
             ScaleTransition(
               scale: _scaleAnimation,

@@ -3,9 +3,9 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:latlong2/latlong.dart';
-import 'package:geolocator/geolocator.dart';
 import 'package:http/http.dart' as http;
 import 'package:responsive_sizer/responsive_sizer.dart';
 
@@ -305,6 +305,7 @@ class _LocationAddPageState extends State<LocationAddPage>
       lat: lat,
       lon: lon,
       fullAddress: streetPart.isNotEmpty
+          // ignore: unnecessary_cast
           ? [streetPart, suburb, city].where((s) => s != null && (s as String).isNotEmpty).join(', ')
           : display,
       city: city,
@@ -453,6 +454,7 @@ class _LocationAddPageState extends State<LocationAddPage>
         }
       }
 
+      // ignore: dead_code
       if (pos == null) {
         _showLocationError('Не удалось определить местоположение.');
         return;

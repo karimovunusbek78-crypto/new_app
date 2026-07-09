@@ -529,7 +529,7 @@ class _VideoReelState extends State<_VideoReel>
     if (!_hasVideo) return;
 
     if (isNetwork) {
-      final cached = await VideoCache.cachedFile(path!);
+      final cached = await VideoCache.cachedFile(path);
       if (!mounted) return;
       if (cached != null) {
         _startController(VideoPlayerController.file(cached));
