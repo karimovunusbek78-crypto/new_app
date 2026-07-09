@@ -1,17 +1,17 @@
 import 'dart:io';
-import 'package:flutter/material.dart';
-import 'package:firebase_auth/firebase_auth.dart';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
+import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:new_app/src/pages/profile/service/profile_history_service.dart';
 import 'package:new_app/src/pages/favorite/favorite_page.dart';
+import 'package:new_app/src/pages/profile/service/profile_history_service.dart';
 import 'package:new_app/src/pages/settings/settings_page.dart';
 import 'package:responsive_sizer/responsive_sizer.dart';
 
-
 class ProfilePage extends StatefulWidget {
-  const ProfilePage({Key? key}) : super(key: key);
+  const ProfilePage({super.key});
 
   @override
   State<ProfilePage> createState() => _ProfilePageState();
@@ -81,7 +81,9 @@ class _ProfilePageState extends State<ProfilePage> {
         final rawAvatarUrl = data['avatarUrl'] as String?;
         // An empty string ("") is not the same as no avatar — treat it
         // as null so the initials fallback shows instead of a blank circle.
-        _avatarUrl = (rawAvatarUrl != null && rawAvatarUrl.isNotEmpty) ? rawAvatarUrl : null;
+        _avatarUrl = (rawAvatarUrl != null && rawAvatarUrl.isNotEmpty)
+            ? rawAvatarUrl
+            : null;
       }
     } catch (e) {
       _showSnack('Не удалось загрузить профиль: $e', isError: true);
@@ -114,18 +116,34 @@ class _ProfilePageState extends State<ProfilePage> {
                   ),
                 ),
                 ListTile(
-                  leading: const Icon(Icons.camera_alt_outlined, color: Colors.black),
-                  title: Text('Сделать фото',
-                      style: TextStyle(fontSize: 14.sp, fontWeight: FontWeight.w600)),
+                  leading: const Icon(
+                    Icons.camera_alt_outlined,
+                    color: Colors.black,
+                  ),
+                  title: Text(
+                    'Сделать фото',
+                    style: TextStyle(
+                      fontSize: 14.sp,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
                   onTap: () {
                     Navigator.pop(ctx);
                     _getImage(ImageSource.camera);
                   },
                 ),
                 ListTile(
-                  leading: const Icon(Icons.photo_outlined, color: Colors.black),
-                  title: Text('Выбрать из галереи',
-                      style: TextStyle(fontSize: 14.sp, fontWeight: FontWeight.w600)),
+                  leading: const Icon(
+                    Icons.photo_outlined,
+                    color: Colors.black,
+                  ),
+                  title: Text(
+                    'Выбрать из галереи',
+                    style: TextStyle(
+                      fontSize: 14.sp,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
                   onTap: () {
                     Navigator.pop(ctx);
                     _getImage(ImageSource.gallery);
@@ -133,12 +151,18 @@ class _ProfilePageState extends State<ProfilePage> {
                 ),
                 if (_avatarFile != null || _avatarUrl != null)
                   ListTile(
-                    leading: const Icon(Icons.delete_outline, color: Colors.red),
-                    title: Text('Удалить фото',
-                        style: TextStyle(
-                            fontSize: 14.sp,
-                            fontWeight: FontWeight.w600,
-                            color: Colors.red)),
+                    leading: const Icon(
+                      Icons.delete_outline,
+                      color: Colors.red,
+                    ),
+                    title: Text(
+                      'Удалить фото',
+                      style: TextStyle(
+                        fontSize: 14.sp,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.red,
+                      ),
+                    ),
                     onTap: () {
                       Navigator.pop(ctx);
                       _deleteAvatar();
@@ -195,16 +219,16 @@ class _ProfilePageState extends State<ProfilePage> {
       final ext = picked.path.split('.').last.toLowerCase();
       final ref = _storage.ref().child('avatars/${user.uid}.$ext');
 
-      await ref.putFile(
-        file,
-        SettableMetadata(contentType: 'image/$ext'),
-      ).timeout(
-        const Duration(seconds: 25),
-        onTimeout: () {
-          throw Exception(
-              'Превышено время ожидания. Проверьте интернет-соединение и что Cloud Storage включён в Firebase Console.');
-        },
-      );
+      await ref
+          .putFile(file, SettableMetadata(contentType: 'image/$ext'))
+          .timeout(
+            const Duration(seconds: 25),
+            onTimeout: () {
+              throw Exception(
+                'Превышено время ожидания. Проверьте интернет-соединение и что Cloud Storage включён в Firebase Console.',
+              );
+            },
+          );
       final url = await ref.getDownloadURL();
 
       if (mounted) {
@@ -246,11 +270,16 @@ class _ProfilePageState extends State<ProfilePage> {
           builder: (ctx, setDialogState) {
             return AlertDialog(
               backgroundColor: Colors.white,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(20),
+              ),
               title: Text(
                 'Подтвердите пароль',
                 style: TextStyle(
-                    fontSize: 16.sp, fontWeight: FontWeight.w700, color: Colors.black),
+                  fontSize: 16.sp,
+                  fontWeight: FontWeight.w700,
+                  color: Colors.black,
+                ),
               ),
               content: Column(
                 mainAxisSize: MainAxisSize.min,
@@ -258,7 +287,10 @@ class _ProfilePageState extends State<ProfilePage> {
                 children: [
                   Text(
                     'Для изменения email введите текущий пароль',
-                    style: TextStyle(fontSize: 13.sp, color: const Color(0xFF8A8A8E)),
+                    style: TextStyle(
+                      fontSize: 13.sp,
+                      color: const Color(0xFF8A8A8E),
+                    ),
                   ),
                   SizedBox(height: 2.h),
                   TextField(
@@ -271,49 +303,71 @@ class _ProfilePageState extends State<ProfilePage> {
                       hintText: 'Пароль',
                       suffixIcon: IconButton(
                         icon: Icon(
-                          obscure ? Icons.visibility_outlined : Icons.visibility_off_outlined,
+                          obscure
+                              ? Icons.visibility_outlined
+                              : Icons.visibility_off_outlined,
                           color: const Color(0xFF8A8A8E),
                         ),
-                        onPressed: () => setDialogState(() => obscure = !obscure),
+                        onPressed: () =>
+                            setDialogState(() => obscure = !obscure),
                       ),
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(12),
                       ),
-                      contentPadding:
-                          EdgeInsets.symmetric(horizontal: 4.w, vertical: 1.5.h),
+                      contentPadding: EdgeInsets.symmetric(
+                        horizontal: 4.w,
+                        vertical: 1.5.h,
+                      ),
                     ),
                   ),
                 ],
               ),
               actions: [
-                Row(children: [
-                  Expanded(
-                    child: OutlinedButton(
-                      onPressed: () => Navigator.of(ctx).pop(false),
-                      style: OutlinedButton.styleFrom(
-                        padding: EdgeInsets.symmetric(vertical: 1.5.h),
-                        side: const BorderSide(color: Color(0xFFE0E0E0)),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: () => Navigator.of(ctx).pop(false),
+                        style: OutlinedButton.styleFrom(
+                          padding: EdgeInsets.symmetric(vertical: 1.5.h),
+                          side: const BorderSide(color: Color(0xFFE0E0E0)),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                        child: Text(
+                          'Отмена',
+                          style: TextStyle(
+                            color: Colors.black,
+                            fontSize: 13.sp,
+                          ),
+                        ),
                       ),
-                      child: Text('Отмена', style: TextStyle(color: Colors.black, fontSize: 13.sp)),
                     ),
-                  ),
-                  SizedBox(width: 2.5.w),
-                  Expanded(
-                    child: ElevatedButton(
-                      onPressed: () => Navigator.of(ctx).pop(true),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.black,
-                        foregroundColor: Colors.white,
-                        elevation: 0,
-                        padding: EdgeInsets.symmetric(vertical: 1.5.h),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    SizedBox(width: 2.5.w),
+                    Expanded(
+                      child: ElevatedButton(
+                        onPressed: () => Navigator.of(ctx).pop(true),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.black,
+                          foregroundColor: Colors.white,
+                          elevation: 0,
+                          padding: EdgeInsets.symmetric(vertical: 1.5.h),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                        child: Text(
+                          'Подтвердить',
+                          style: TextStyle(
+                            fontWeight: FontWeight.w600,
+                            fontSize: 13.sp,
+                          ),
+                        ),
                       ),
-                      child: Text('Подтвердить',
-                          style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13.sp)),
                     ),
-                  ),
-                ]),
+                  ],
+                ),
               ],
               actionsPadding: EdgeInsets.fromLTRB(4.w, 0, 4.w, 2.h),
             );
@@ -396,11 +450,14 @@ class _ProfilePageState extends State<ProfilePage> {
       setState(() {
         _isEditing = false;
         _isSaving = false;
-        _originalEmail = FirebaseAuth.instance.currentUser?.email ?? _originalEmail;
+        _originalEmail =
+            FirebaseAuth.instance.currentUser?.email ?? _originalEmail;
       });
 
       if (emailChanged) {
-        _showSnack('Профиль обновлён. Подтвердите новый email по ссылке из письма');
+        _showSnack(
+          'Профиль обновлён. Подтвердите новый email по ссылке из письма',
+        );
       } else {
         _showSnack('Профиль обновлён');
       }
@@ -459,38 +516,48 @@ class _ProfilePageState extends State<ProfilePage> {
           style: TextStyle(fontSize: 13.sp, color: const Color(0xFF8A8A8E)),
         ),
         actions: [
-          Row(children: [
-            Expanded(
-              child: OutlinedButton(
-                onPressed: () => Navigator.of(ctx).pop(false),
-                style: OutlinedButton.styleFrom(
-                  padding: EdgeInsets.symmetric(vertical: 1.5.h),
-                  side: const BorderSide(color: Color(0xFFE0E0E0)),
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12)),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: () => Navigator.of(ctx).pop(false),
+                  style: OutlinedButton.styleFrom(
+                    padding: EdgeInsets.symmetric(vertical: 1.5.h),
+                    side: const BorderSide(color: Color(0xFFE0E0E0)),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  child: Text(
+                    'Отмена',
+                    style: TextStyle(color: Colors.black, fontSize: 13.sp),
+                  ),
                 ),
-                child: Text('Отмена',
-                    style: TextStyle(color: Colors.black, fontSize: 13.sp)),
               ),
-            ),
-            SizedBox(width: 2.5.w),
-            Expanded(
-              child: ElevatedButton(
-                onPressed: () => Navigator.of(ctx).pop(true),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.black,
-                  foregroundColor: Colors.white,
-                  elevation: 0,
-                  padding: EdgeInsets.symmetric(vertical: 1.5.h),
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12)),
-                ),
-                child: Text('Выйти',
+              SizedBox(width: 2.5.w),
+              Expanded(
+                child: ElevatedButton(
+                  onPressed: () => Navigator.of(ctx).pop(true),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.black,
+                    foregroundColor: Colors.white,
+                    elevation: 0,
+                    padding: EdgeInsets.symmetric(vertical: 1.5.h),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  child: Text(
+                    'Выйти',
                     style: TextStyle(
-                        fontWeight: FontWeight.w600, fontSize: 13.sp)),
+                      fontWeight: FontWeight.w600,
+                      fontSize: 13.sp,
+                    ),
+                  ),
+                ),
               ),
-            ),
-          ]),
+            ],
+          ),
         ],
         actionsPadding: EdgeInsets.fromLTRB(4.w, 0, 4.w, 2.h),
       ),
@@ -507,7 +574,9 @@ class _ProfilePageState extends State<ProfilePage> {
     final displayName = _nameController.text.trim().isNotEmpty
         ? _nameController.text.trim()
         : 'Без имени';
-    final initials = displayName.isNotEmpty ? displayName[0].toUpperCase() : '?';
+    final initials = displayName.isNotEmpty
+        ? displayName[0].toUpperCase()
+        : '?';
 
     if (_isLoadingProfile) {
       return const Scaffold(
@@ -542,9 +611,13 @@ class _ProfilePageState extends State<ProfilePage> {
                   foregroundColor: Colors.black,
                   padding: EdgeInsets.symmetric(horizontal: 3.w),
                 ),
-                child: Text('Изменить',
-                    style: TextStyle(
-                        fontSize: 13.sp, fontWeight: FontWeight.w700)),
+                child: Text(
+                  'Изменить',
+                  style: TextStyle(
+                    fontSize: 13.sp,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
               ),
             ),
           if (_isEditing)
@@ -562,9 +635,13 @@ class _ProfilePageState extends State<ProfilePage> {
                   foregroundColor: const Color(0xFF8A8A8E),
                   padding: EdgeInsets.symmetric(horizontal: 3.w),
                 ),
-                child: Text('Отмена',
-                    style: TextStyle(
-                        fontSize: 13.sp, fontWeight: FontWeight.w600)),
+                child: Text(
+                  'Отмена',
+                  style: TextStyle(
+                    fontSize: 13.sp,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
               ),
             ),
         ],
@@ -604,11 +681,11 @@ class _ProfilePageState extends State<ProfilePage> {
                                 fit: BoxFit.cover,
                               )
                             : (_avatarUrl != null
-                                ? DecorationImage(
-                                    image: NetworkImage(_avatarUrl!),
-                                    fit: BoxFit.cover,
-                                  )
-                                : null),
+                                  ? DecorationImage(
+                                      image: NetworkImage(_avatarUrl!),
+                                      fit: BoxFit.cover,
+                                    )
+                                  : null),
                       ),
                       child: (_avatarFile == null && _avatarUrl == null)
                           ? Center(
@@ -656,8 +733,11 @@ class _ProfilePageState extends State<ProfilePage> {
                             shape: BoxShape.circle,
                             border: Border.all(color: Colors.black, width: 2),
                           ),
-                          child: Icon(Icons.camera_alt_rounded,
-                              color: Colors.black, size: 1.8.h),
+                          child: Icon(
+                            Icons.camera_alt_rounded,
+                            color: Colors.black,
+                            size: 1.8.h,
+                          ),
                         ),
                       ),
                   ],
@@ -679,10 +759,7 @@ class _ProfilePageState extends State<ProfilePage> {
             SizedBox(height: 0.3.h),
             Text(
               user?.email ?? 'Нет email',
-              style: TextStyle(
-                fontSize: 13.sp,
-                color: const Color(0xFF8A8A8E),
-              ),
+              style: TextStyle(fontSize: 13.sp, color: const Color(0xFF8A8A8E)),
             ),
 
             SizedBox(height: 3.5.h),
@@ -765,7 +842,10 @@ class _ProfilePageState extends State<ProfilePage> {
                   alignment: Alignment.centerLeft,
                   child: Text(
                     'На новый email придёт письмо для подтверждения',
-                    style: TextStyle(fontSize: 11.5.sp, color: const Color(0xFF8A8A8E)),
+                    style: TextStyle(
+                      fontSize: 11.5.sp,
+                      color: const Color(0xFF8A8A8E),
+                    ),
                   ),
                 ),
               ),
@@ -778,25 +858,32 @@ class _ProfilePageState extends State<ProfilePage> {
                 width: double.infinity,
                 height: 6.5.h,
                 child: ElevatedButton(
-                  onPressed: (_isSaving || _isUploadingAvatar) ? null : _saveProfile,
+                  onPressed: (_isSaving || _isUploadingAvatar)
+                      ? null
+                      : _saveProfile,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.black,
                     foregroundColor: Colors.white,
                     elevation: 0,
                     shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(3.5.w)),
+                      borderRadius: BorderRadius.circular(3.5.w),
+                    ),
                   ),
                   child: _isSaving
                       ? SizedBox(
                           width: 2.5.h,
                           height: 2.5.h,
                           child: const CircularProgressIndicator(
-                              color: Colors.white, strokeWidth: 2),
+                            color: Colors.white,
+                            strokeWidth: 2,
+                          ),
                         )
                       : Text(
                           'Сохранить',
                           style: TextStyle(
-                              fontSize: 15.sp, fontWeight: FontWeight.w700),
+                            fontSize: 15.sp,
+                            fontWeight: FontWeight.w700,
+                          ),
                         ),
                 ),
               ),
@@ -809,19 +896,25 @@ class _ProfilePageState extends State<ProfilePage> {
               height: 6.5.h,
               child: OutlinedButton.icon(
                 onPressed: _logout,
-                icon: Icon(Icons.logout_rounded, size: 2.2.h, color: Colors.black),
+                icon: Icon(
+                  Icons.logout_rounded,
+                  size: 2.2.h,
+                  color: Colors.black,
+                ),
                 label: Text(
                   'Выйти из аккаунта',
                   style: TextStyle(
-                      fontSize: 14.sp,
-                      fontWeight: FontWeight.w600,
-                      color: Colors.black),
+                    fontSize: 14.sp,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.black,
+                  ),
                 ),
                 style: OutlinedButton.styleFrom(
                   side: const BorderSide(color: Colors.black, width: 1.2),
                   elevation: 0,
                   shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(3.5.w)),
+                    borderRadius: BorderRadius.circular(3.5.w),
+                  ),
                 ),
               ),
             ),
@@ -892,8 +985,11 @@ class _MenuTile extends StatelessWidget {
             color: Colors.black,
           ),
         ),
-        trailing: Icon(Icons.chevron_right_rounded,
-            color: const Color(0xFFB0B0B0), size: 2.4.h),
+        trailing: Icon(
+          Icons.chevron_right_rounded,
+          color: const Color(0xFFB0B0B0),
+          size: 2.4.h,
+        ),
         contentPadding: EdgeInsets.symmetric(horizontal: 4.w, vertical: 0.4.h),
       ),
     );
@@ -947,10 +1043,7 @@ class _ProfileField extends StatelessWidget {
             color: const Color(0xFF8A8A8E),
           ),
           hintText: hint,
-          hintStyle: TextStyle(
-            fontSize: 13.sp,
-            color: const Color(0xFFB0B0B0),
-          ),
+          hintStyle: TextStyle(fontSize: 13.sp, color: const Color(0xFFB0B0B0)),
           prefixIcon: Icon(
             icon,
             color: enabled ? Colors.black : const Color(0xFFB0B0B0),
@@ -973,8 +1066,10 @@ class _ProfileField extends StatelessWidget {
             borderSide: BorderSide.none,
           ),
           filled: false,
-          contentPadding:
-              EdgeInsets.symmetric(horizontal: 4.w, vertical: 1.8.h),
+          contentPadding: EdgeInsets.symmetric(
+            horizontal: 4.w,
+            vertical: 1.8.h,
+          ),
         ),
       ),
     );
