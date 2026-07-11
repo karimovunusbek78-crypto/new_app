@@ -1,17 +1,25 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:new_app/src/video/video%20page/page/video_analytics_page.dart';
 import 'package:provider/provider.dart';
 import 'package:responsive_sizer/responsive_sizer.dart';
 
 import 'package:new_app/src/pages/home/models/car.dart';
 import 'package:new_app/src/pages/home/providers/cars_provider.dart';
-import 'package:new_app/src/pages/home/providers/subscribtion_provider.dart';
 
+/// «Моя статистика» — улучшенная версия.
+///  • шапка профиля: аватар + имя (живой стрим из users/{uid});
+///  • 4 карточки: подписчики / всего лайков / всего просмотров / публикаций;
+///  • список объявлений: тап по строке или по иконке графика открывает
+///    ПОЛНУЮ аналитику этого видео (кто лайкнул, кто смотрел, когда
+///    опубликовано) — VideoAnalyticsPage;
+///  • удаление объявления с причиной — как раньше.
 class MyStatsPage extends StatelessWidget {
   const MyStatsPage({super.key});
 
   static const _accent = Color(0xFF111111);
+  static const _grey = Color(0xFF9A9AA0);
 
   @override
   Widget build(BuildContext context) {
@@ -20,6 +28,7 @@ class MyStatsPage extends StatelessWidget {
 
     final myCars = context.watch<CarsProvider>().myCars(uid);
     final totalLikes = myCars.fold<int>(0, (sum, c) => sum + c.likesCount);
+    final totalViews = myCars.fold<int>(0, (sum, c) => sum + c.viewsCount);
 
     return Scaffold(
       backgroundColor: const Color(0xFFF5F5F7),
@@ -35,7 +44,8 @@ class MyStatsPage extends StatelessWidget {
                     behavior: HitTestBehavior.opaque,
                     child: Padding(
                       padding: EdgeInsets.only(right: 3.w),
-                      child: Icon(Icons.arrow_back, color: _accent, size: 3.2.h),
+                      child:
+                          Icon(Icons.arrow_back, color: _accent, size: 3.2.h),
                     ),
                   ),
                   Text(
@@ -51,53 +61,102 @@ class MyStatsPage extends StatelessWidget {
               ),
             ),
             Expanded(
-              child: ListView(
-                padding: EdgeInsets.fromLTRB(5.w, 2.h, 5.w, 3.h),
-                children: [
-                  Row(
+              child: StreamBuilder<DocumentSnapshot>(
+                stream: FirebaseFirestore.instance
+                    .collection('users')
+                    .doc(uid)
+                    .snapshots(),
+                builder: (context, snap) {
+                  final data = snap.data?.data() as Map<String, dynamic>?;
+                  final name = ((data?['name'] as String?) ?? '').trim();
+                  final avatarUrl =
+                      ((data?['avatarUrl'] as String?) ?? '').trim();
+                  final subscribers = data?['subscribersCount'] ?? 0;
+
+                  return ListView(
+                    padding: EdgeInsets.fromLTRB(5.w, 2.h, 5.w, 3.h),
                     children: [
-                      Expanded(
-                        child: _SubscribersCard(uid: uid, accent: _accent),
+                      // ── Шапка профиля ────────────────────────────────
+                      _ProfileHeader(name: name, avatarUrl: avatarUrl),
+                      SizedBox(height: 2.h),
+
+                      // ── 4 карточки статистики (2×2) ──────────────────
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _StatCard(
+                              icon: Icons.people_alt_outlined,
+                              value: '$subscribers',
+                              label: 'Подписчики',
+                            ),
+                          ),
+                          SizedBox(width: 3.w),
+                          Expanded(
+                            child: _StatCard(
+                              icon: Icons.favorite_rounded,
+                              value: '$totalLikes',
+                              label: 'Всего лайков',
+                            ),
+                          ),
+                        ],
                       ),
-                      SizedBox(width: 3.w),
-                      Expanded(
-                        child: _StatCard(
-                          icon: Icons.favorite_rounded,
-                          value: '$totalLikes',
-                          label: 'Всего лайков',
-                        ),
+                      SizedBox(height: 3.w),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _StatCard(
+                              icon: Icons.remove_red_eye_outlined,
+                              value: '$totalViews',
+                              label: 'Всего просмотров',
+                            ),
+                          ),
+                          SizedBox(width: 3.w),
+                          Expanded(
+                            child: _StatCard(
+                              icon: Icons.local_offer_outlined,
+                              value: '${myCars.length}',
+                              label: 'Опубликовано',
+                            ),
+                          ),
+                        ],
                       ),
-                      SizedBox(width: 3.w),
-                      Expanded(
-                        child: _StatCard(
-                          icon: Icons.local_offer_outlined,
-                          value: '${myCars.length}',
-                          label: 'Опубликовано',
-                        ),
+
+                      SizedBox(height: 3.h),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              'Мои объявления',
+                              style: TextStyle(
+                                  fontSize: 15.sp,
+                                  fontWeight: FontWeight.w800,
+                                  color: _accent),
+                            ),
+                          ),
+                          Text(
+                            'тап — аналитика',
+                            style:
+                                TextStyle(fontSize: 10.sp, color: _grey),
+                          ),
+                        ],
                       ),
+                      SizedBox(height: 1.5.h),
+                      if (myCars.isEmpty)
+                        Padding(
+                          padding: EdgeInsets.only(top: 4.h),
+                          child: Center(
+                            child: Text(
+                              'У вас пока нет объявлений',
+                              style:
+                                  TextStyle(fontSize: 13.sp, color: _grey),
+                            ),
+                          ),
+                        )
+                      else
+                        ...myCars.map((c) => _CarStatRow(car: c)),
                     ],
-                  ),
-                  SizedBox(height: 3.h),
-                  Text(
-                    'Мои объявления',
-                    style: TextStyle(
-                        fontSize: 15.sp, fontWeight: FontWeight.w800, color: _accent),
-                  ),
-                  SizedBox(height: 1.5.h),
-                  if (myCars.isEmpty)
-                    Padding(
-                      padding: EdgeInsets.only(top: 4.h),
-                      child: Center(
-                        child: Text(
-                          'У вас пока нет объявлений',
-                          style: TextStyle(
-                              fontSize: 13.sp, color: const Color(0xFF9A9AA0)),
-                        ),
-                      ),
-                    )
-                  else
-                    ...myCars.map((c) => _CarStatRow(car: c)),
-                ],
+                  );
+                },
               ),
             ),
           ],
@@ -107,24 +166,76 @@ class MyStatsPage extends StatelessWidget {
   }
 }
 
-// ── Карточка подписчиков (живой стрим из users/{uid}) ─────────────────
-class _SubscribersCard extends StatelessWidget {
-  final String uid;
-  final Color accent;
-  const _SubscribersCard({required this.uid, required this.accent});
+// ── Шапка профиля: аватар + имя ───────────────────────────────────────
+class _ProfileHeader extends StatelessWidget {
+  final String name;
+  final String avatarUrl;
+  const _ProfileHeader({required this.name, required this.avatarUrl});
 
   @override
   Widget build(BuildContext context) {
-    return StreamBuilder<DocumentSnapshot>(
-      stream: FirebaseFirestore.instance.collection('users').doc(uid).snapshots(),
-      builder: (context, snap) {
-        final count = (snap.data?.data() as Map<String, dynamic>?)?['subscribersCount'] ?? 0;
-        return _StatCard(
-          icon: Icons.people_alt_outlined,
-          value: '$count',
-          label: 'Подписчики',
-        );
-      },
+    final displayName = name.isNotEmpty ? name : 'Мой профиль';
+    final initials = displayName.isNotEmpty ? displayName[0].toUpperCase() : 'Я';
+
+    return Container(
+      padding: EdgeInsets.all(3.5.w),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(4.w),
+        border: Border.all(color: const Color(0xFFEFEFEF)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 14.w,
+            height: 14.w,
+            decoration: BoxDecoration(
+              color: Colors.black12,
+              shape: BoxShape.circle,
+              image: avatarUrl.isNotEmpty
+                  ? DecorationImage(
+                      image: NetworkImage(avatarUrl), fit: BoxFit.cover)
+                  : null,
+            ),
+            child: avatarUrl.isEmpty
+                ? Center(
+                    child: Text(
+                      initials,
+                      style: TextStyle(
+                        fontSize: 16.sp,
+                        fontWeight: FontWeight.w800,
+                        color: Colors.black54,
+                      ),
+                    ),
+                  )
+                : null,
+          ),
+          SizedBox(width: 3.w),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  displayName,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 15.sp,
+                    fontWeight: FontWeight.w800,
+                    color: const Color(0xFF111111),
+                  ),
+                ),
+                SizedBox(height: 0.3.h),
+                Text(
+                  'Статистика ваших объявлений',
+                  style: TextStyle(
+                      fontSize: 10.5.sp, color: const Color(0xFF9A9AA0)),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -133,7 +244,8 @@ class _StatCard extends StatelessWidget {
   final IconData icon;
   final String value;
   final String label;
-  const _StatCard({required this.icon, required this.value, required this.label});
+  const _StatCard(
+      {required this.icon, required this.value, required this.label});
 
   @override
   Widget build(BuildContext context) {
@@ -164,7 +276,7 @@ class _StatCard extends StatelessWidget {
   }
 }
 
-// ── Строка объявления со статами + удалением ──────────────────────────
+// ── Строка объявления: тап → аналитика видео, иконки: график и корзина ─
 class _CarStatRow extends StatelessWidget {
   final Car car;
   const _CarStatRow({required this.car});
@@ -176,6 +288,13 @@ class _CarStatRow extends StatelessWidget {
     'Другая причина',
   ];
 
+  void _openAnalytics(BuildContext context) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => VideoAnalyticsPage(car: car)),
+    );
+  }
+
   Future<void> _confirmDelete(BuildContext context) async {
     String selectedReason = _reasons.first;
 
@@ -184,7 +303,8 @@ class _CarStatRow extends StatelessWidget {
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setDialogState) => AlertDialog(
           backgroundColor: Colors.white,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
           title: Text('Удалить объявление?',
               style: TextStyle(fontSize: 16.sp, fontWeight: FontWeight.w800)),
           content: Column(
@@ -193,7 +313,8 @@ class _CarStatRow extends StatelessWidget {
             children: [
               Text(
                 'Объявление пропадёт из приложения, и никто больше не сможет его увидеть.',
-                style: TextStyle(fontSize: 12.5.sp, color: const Color(0xFF8A8A8E)),
+                style:
+                    TextStyle(fontSize: 12.5.sp, color: const Color(0xFF8A8A8E)),
               ),
               SizedBox(height: 1.h),
               ..._reasons.map(
@@ -215,9 +336,11 @@ class _CarStatRow extends StatelessWidget {
                   onPressed: () => Navigator.pop(ctx, false),
                   style: OutlinedButton.styleFrom(
                     side: const BorderSide(color: Color(0xFFE0E0E0)),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12)),
                   ),
-                  child: const Text('Отмена', style: TextStyle(color: Colors.black)),
+                  child:
+                      const Text('Отмена', style: TextStyle(color: Colors.black)),
                 ),
               ),
               SizedBox(width: 2.5.w),
@@ -227,7 +350,8 @@ class _CarStatRow extends StatelessWidget {
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.black,
                     foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12)),
                   ),
                   child: const Text('Удалить'),
                 ),
@@ -239,85 +363,113 @@ class _CarStatRow extends StatelessWidget {
     );
 
     if (confirmed == true && context.mounted) {
-      await context.read<CarsProvider>().deleteCar(car.id, reason: selectedReason);
+      await context
+          .read<CarsProvider>()
+          .deleteCar(car.id, reason: selectedReason);
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      margin: EdgeInsets.only(bottom: 2.5.w),
-      padding: EdgeInsets.all(2.5.w),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(4.w),
-        border: Border.all(color: const Color(0xFFEFEFEF)),
-      ),
-      child: Row(
-        children: [
-          ClipRRect(
-            borderRadius: BorderRadius.circular(3.w),
-            child: SizedBox(
-              width: 15.w,
-              height: 15.w,
-              child: car.photoPaths.isNotEmpty
-                  ? Image.network(car.photoPaths.first, fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => Container(color: Colors.black12))
-                  : Container(
-                      color: Colors.black12,
-                      child: const Icon(Icons.directions_car_outlined, color: Colors.black38),
-                    ),
+    return GestureDetector(
+      // Тап по всей строке → аналитика этого видео.
+      onTap: () => _openAnalytics(context),
+      child: Container(
+        margin: EdgeInsets.only(bottom: 2.5.w),
+        padding: EdgeInsets.all(2.5.w),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(4.w),
+          border: Border.all(color: const Color(0xFFEFEFEF)),
+        ),
+        child: Row(
+          children: [
+            ClipRRect(
+              borderRadius: BorderRadius.circular(3.w),
+              child: SizedBox(
+                width: 15.w,
+                height: 15.w,
+                child: car.photoPaths.isNotEmpty
+                    ? Image.network(car.photoPaths.first,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) =>
+                            Container(color: Colors.black12))
+                    : Container(
+                        color: Colors.black12,
+                        child: const Icon(Icons.directions_car_outlined,
+                            color: Colors.black38),
+                      ),
+              ),
             ),
-          ),
-          SizedBox(width: 3.w),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  car.name,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(fontSize: 13.sp, fontWeight: FontWeight.w700),
-                ),
-                SizedBox(height: 0.7.h),
-                Row(
-                  children: [
-                    const Icon(Icons.favorite, size: 14, color: Colors.redAccent),
-                    SizedBox(width: 1.w),
-                    Text('${car.likesCount}', style: TextStyle(fontSize: 10.5.sp)),
-                    SizedBox(width: 3.w),
-                    const Icon(Icons.remove_red_eye_outlined, size: 14, color: Colors.grey),
-                    SizedBox(width: 1.w),
-                    Text('${car.viewsCount}', style: TextStyle(fontSize: 10.5.sp)),
-                    SizedBox(width: 3.w),
-                    FutureBuilder<int>(
-                      future: context.read<CarsProvider>().viewsToday(car.id),
-                      builder: (context, snap) {
-                        final today = snap.data ?? 0;
-                        return Row(
-                          children: [
-                            const Icon(Icons.today_outlined, size: 14, color: Colors.blueGrey),
-                            SizedBox(width: 1.w),
-                            Text('$today сегодня', style: TextStyle(fontSize: 10.5.sp)),
-                          ],
-                        );
-                      },
-                    ),
-                  ],
-                ),
-              ],
+            SizedBox(width: 3.w),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    car.name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                        fontSize: 13.sp, fontWeight: FontWeight.w700),
+                  ),
+                  SizedBox(height: 0.7.h),
+                  Row(
+                    children: [
+                      const Icon(Icons.favorite,
+                          size: 14, color: Colors.redAccent),
+                      SizedBox(width: 1.w),
+                      Text('${car.likesCount}',
+                          style: TextStyle(fontSize: 10.5.sp)),
+                      SizedBox(width: 3.w),
+                      const Icon(Icons.remove_red_eye_outlined,
+                          size: 14, color: Colors.grey),
+                      SizedBox(width: 1.w),
+                      Text('${car.viewsCount}',
+                          style: TextStyle(fontSize: 10.5.sp)),
+                      SizedBox(width: 3.w),
+                      FutureBuilder<int>(
+                        future:
+                            context.read<CarsProvider>().viewsToday(car.id),
+                        builder: (context, snap) {
+                          final today = snap.data ?? 0;
+                          return Row(
+                            children: [
+                              const Icon(Icons.today_outlined,
+                                  size: 14, color: Colors.blueGrey),
+                              SizedBox(width: 1.w),
+                              Text('$today сегодня',
+                                  style: TextStyle(fontSize: 10.5.sp)),
+                            ],
+                          );
+                        },
+                      ),
+                    ],
+                  ),
+                ],
+              ),
             ),
-          ),
-          GestureDetector(
-            onTap: () => _confirmDelete(context),
-            behavior: HitTestBehavior.opaque,
-            child: Padding(
-              padding: EdgeInsets.all(1.5.w),
-              child: const Icon(Icons.delete_outline, color: Color(0xFF8A8A90)),
+            // Иконка аналитики этого видео.
+            GestureDetector(
+              onTap: () => _openAnalytics(context),
+              behavior: HitTestBehavior.opaque,
+              child: Padding(
+                padding: EdgeInsets.all(1.5.w),
+                child: const Icon(Icons.bar_chart_rounded,
+                    color: Color(0xFF111111)),
+              ),
             ),
-          ),
-        ],
+            GestureDetector(
+              onTap: () => _confirmDelete(context),
+              behavior: HitTestBehavior.opaque,
+              child: Padding(
+                padding: EdgeInsets.all(1.5.w),
+                child: const Icon(Icons.delete_outline,
+                    color: Color(0xFF8A8A90)),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
