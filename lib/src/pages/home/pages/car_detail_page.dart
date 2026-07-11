@@ -7,6 +7,8 @@ import 'package:new_app/src/pages/home/models/car.dart';
 import 'package:new_app/src/pages/home/providers/cars_provider.dart';
 import 'package:new_app/src/pages/home/widgets/car_photo_caursel.dart';
 import 'package:new_app/src/pages/pages.dart';
+import 'package:new_app/src/video/cache/video_cache.dart';
+import 'package:new_app/src/video/controller/main_tab_controller.dart';
 import 'package:new_app/src/video/video%20page/comments/comments_sheet.dart';
 import 'package:provider/provider.dart';
 import 'package:responsive_sizer/responsive_sizer.dart';
@@ -55,6 +57,11 @@ class _CarDetailPageState extends State<CarDetailPage> {
     _hasVideo = path != null &&
         path.isNotEmpty &&
         (isNetwork || File(path).existsSync());
+
+    // КЕШ: пока пользователь читает объявление — тихо качаем видео на диск.
+    // К моменту нажатия «Смотреть видео» / «Смотреть в ленте» ролик уже
+    // будет локальным и стартует мгновенно, без лагов.
+    if (_hasVideo && isNetwork) VideoCache.prefetch(path);
 
     context.read<CarsProvider>().loadLikeState(widget.car.id);
 
@@ -132,6 +139,28 @@ class _CarDetailPageState extends State<CarDetailPage> {
     _refreshCommentsCount();
   }
 
+  /// «Смотреть в ленте».
+  ///
+  /// БЫЛО: Navigator.push(VideoPage(...)) — открывало ленту отдельным
+  /// full-screen роутом БЕЗ нижнего navbar (у пушнутого роута его просто
+  /// нет — bottomNavigationBar есть только у MainNavBar).
+  ///
+  /// СТАЛО: просим NavTabController переключить таб на "Видео" и
+  /// перейти сразу на это авто, затем возвращаемся к MainNavBar
+  /// (popUntil до корневого роута). Navbar остаётся на экране, т.к.
+  /// лента теперь открывается ВНУТРИ MainNavBar, а не поверх него.
+  ///
+  /// ВАЖНО: popUntil((route) => route.isFirst) предполагает, что
+  /// MainNavBar — корневой (первый) роут приложения. Если у тебя между
+  /// MainNavBar и CarDetailPage есть ещё какой-то обёрточный роут —
+  /// поправь условие под свою структуру навигации.
+  void _openInLenta() {
+    _video?.pause();
+    FocusManager.instance.primaryFocus?.unfocus();
+    context.read<NavTabController>().openVideoFeed(carId: widget.car.id);
+    Navigator.of(context).popUntil((route) => route.isFirst);
+  }
+
   void _pop() {
     FocusManager.instance.primaryFocus?.unfocus();
     Navigator.pop(context);
@@ -157,9 +186,24 @@ class _CarDetailPageState extends State<CarDetailPage> {
       _videoError = false;
     });
     final path = widget.car.videoPath!;
-    final c = path.startsWith('http')
-        ? VideoPlayerController.networkUrl(Uri.parse(path))
-        : VideoPlayerController.file(File(path));
+
+    // КЕШ: если сетевой ролик уже скачан — играем локальный файл
+    // (мгновенный старт). Если ещё нет — играем по сети, а кеш
+    // докачается в фоне и пригодится ленте.
+    VideoPlayerController c;
+    if (path.startsWith('http')) {
+      final cached = await VideoCache.cachedFile(path);
+      if (!mounted) return;
+      if (cached != null) {
+        c = VideoPlayerController.file(cached);
+      } else {
+        c = VideoPlayerController.networkUrl(Uri.parse(path));
+        VideoCache.prefetch(path);
+      }
+    } else {
+      c = VideoPlayerController.file(File(path));
+    }
+
     _video = c;
     try {
       await c.initialize();
@@ -219,6 +263,10 @@ class _CarDetailPageState extends State<CarDetailPage> {
                       if (_hasVideo) ...[
                         SizedBox(height: 1.5.h),
                         _videoCard(car),
+                        SizedBox(height: 1.2.h),
+                        // Небольшой контейнер «Смотреть в ленте» —
+                        // сразу после видео, как просили.
+                        _lentaCard(),
                       ],
                       SizedBox(height: 1.5.h),
                       _specsCard(car),
@@ -340,9 +388,22 @@ class _CarDetailPageState extends State<CarDetailPage> {
             ),
           ),
           SizedBox(height: 0.6.h),
-          Text(
-            '${car.year} год · ${car.km} км',
-            style: TextStyle(fontSize: 12.5.sp, color: _grey),
+          Row(
+            children: [
+              Icon(Icons.event_outlined, size: 1.8.h, color: _grey),
+              SizedBox(width: 1.w),
+              Text(
+                '${car.year} год',
+                style: TextStyle(fontSize: 12.5.sp, color: _grey),
+              ),
+              SizedBox(width: 3.w),
+              Icon(Icons.speed_outlined, size: 1.8.h, color: _grey),
+              SizedBox(width: 1.w),
+              Text(
+                '${car.km} км',
+                style: TextStyle(fontSize: 12.5.sp, color: _grey),
+              ),
+            ],
           ),
           SizedBox(height: 1.4.h),
           Row(
@@ -399,6 +460,77 @@ class _CarDetailPageState extends State<CarDetailPage> {
           curve: Curves.easeOut,
           alignment: Alignment.topCenter,
           child: _videoOpen ? _videoPlayer() : _videoPoster(car),
+        ),
+      ),
+    );
+  }
+
+  /// Контейнер «Смотреть в ленте» — переключает таб на видео-ленту
+  /// сразу на видео этого объявления, оставляя navbar на экране.
+  Widget _lentaCard() {
+    return GestureDetector(
+      onTap: _openInLenta,
+      child: Container(
+        width: double.infinity,
+        padding: EdgeInsets.symmetric(horizontal: 4.w, vertical: 1.5.h),
+        decoration: BoxDecoration(
+          gradient: const LinearGradient(
+            begin: Alignment.centerLeft,
+            end: Alignment.centerRight,
+            colors: [Color(0xFF3A6FF8), Color(0xFF5B8CFF)],
+          ),
+          borderRadius: BorderRadius.circular(4.5.w),
+          boxShadow: [
+            BoxShadow(
+              color: _accent.withOpacity(0.28),
+              blurRadius: 14,
+              offset: const Offset(0, 5),
+            ),
+          ],
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 5.4.h,
+              height: 5.4.h,
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.18),
+                shape: BoxShape.circle,
+                border: Border.all(
+                    color: Colors.white.withOpacity(0.35), width: 1.2),
+              ),
+              child: Icon(Icons.slow_motion_video_rounded,
+                  color: Colors.white, size: 3.h),
+            ),
+            SizedBox(width: 3.5.w),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Смотреть в ленте',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 13.5.sp,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  SizedBox(height: 0.2.h),
+                  Text(
+                    'Это видео в формате ленты, свайпай дальше',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: Colors.white.withOpacity(0.85),
+                      fontSize: 11.sp,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Icon(Icons.chevron_right_rounded,
+                color: Colors.white, size: 3.h),
+          ],
         ),
       ),
     );
@@ -613,16 +745,16 @@ class _CarDetailPageState extends State<CarDetailPage> {
   // ------------------------------------------------------------- specs card
 
   Widget _specsCard(Car car) {
-    final items = <MapEntry<String, String>>[
-      MapEntry('Коробка', car.transmission),
-      MapEntry('Топливо', car.fuelType),
-      MapEntry('Объём', car.engineCapacity),
-      MapEntry('Кузов', car.bodyType),
-      MapEntry('Привод', car.driveType),
-      MapEntry('Цвет', car.color),
-      MapEntry('Состояние', car.condition),
-      MapEntry('Владельцев', car.ownersCount),
-      MapEntry('Город', car.location),
+    final items = <_SpecItem>[
+      _SpecItem(Icons.settings_outlined, 'Коробка', car.transmission),
+      _SpecItem(Icons.local_gas_station_outlined, 'Топливо', car.fuelType),
+      _SpecItem(Icons.bolt_outlined, 'Объём', car.engineCapacity),
+      _SpecItem(Icons.directions_car_outlined, 'Кузов', car.bodyType),
+      _SpecItem(Icons.sync_alt_rounded, 'Привод', car.driveType),
+      _SpecItem(Icons.palette_outlined, 'Цвет', car.color),
+      _SpecItem(Icons.verified_outlined, 'Состояние', car.condition),
+      _SpecItem(Icons.person_outline_rounded, 'Владельцев', car.ownersCount),
+      _SpecItem(Icons.location_on_outlined, 'Город', car.location),
     ].where((e) => e.value.trim().isNotEmpty).toList();
 
     if (items.isEmpty) return const SizedBox.shrink();
@@ -645,9 +777,11 @@ class _CarDetailPageState extends State<CarDetailPage> {
                   ),
                 Row(
                   children: [
+                    Icon(e.icon, size: 2.h, color: _grey),
+                    SizedBox(width: 2.5.w),
                     Expanded(
                       child: Text(
-                        e.key,
+                        e.label,
                         style:
                             TextStyle(fontSize: 12.5.sp, color: _grey),
                       ),
@@ -789,9 +923,10 @@ class _CarDetailPageState extends State<CarDetailPage> {
                     : Icons.favorite_border_rounded,
                 iconColor: liked ? Colors.red : Colors.black,
                 label: 'Нравится',
+                highlighted: liked,
                 onTap: _toggleLike,
               ),
-              SizedBox(width: 5.w),
+              SizedBox(width: 2.5.w),
               _barButton(
                 icon: Icons.mode_comment_outlined,
                 iconColor: Colors.black,
@@ -804,8 +939,16 @@ class _CarDetailPageState extends State<CarDetailPage> {
               GestureDetector(
                 onTap: () => _soon('Скоро можно будет делиться объявлением'),
                 behavior: HitTestBehavior.opaque,
-                child: Icon(Icons.share_outlined,
-                    color: Colors.black, size: 2.6.h),
+                child: Container(
+                  width: 4.6.h,
+                  height: 4.6.h,
+                  decoration: const BoxDecoration(
+                    color: Color(0xFFF2F2F7),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(Icons.share_outlined,
+                      color: Colors.black, size: 2.3.h),
+                ),
               ),
             ],
           ),
@@ -819,24 +962,41 @@ class _CarDetailPageState extends State<CarDetailPage> {
     required Color iconColor,
     required String label,
     required VoidCallback onTap,
+    bool highlighted = false,
   }) {
     return GestureDetector(
       onTap: onTap,
       behavior: HitTestBehavior.opaque,
-      child: Row(
-        children: [
-          Icon(icon, color: iconColor, size: 2.6.h),
-          SizedBox(width: 1.5.w),
-          Text(
-            label,
-            style: TextStyle(
-              fontSize: 12.5.sp,
-              fontWeight: FontWeight.w600,
-              color: Colors.black,
+      child: Container(
+        padding: EdgeInsets.symmetric(horizontal: 3.w, vertical: 0.9.h),
+        decoration: BoxDecoration(
+          color: highlighted
+              ? Colors.red.withOpacity(0.08)
+              : const Color(0xFFF2F2F7),
+          borderRadius: BorderRadius.circular(3.h),
+        ),
+        child: Row(
+          children: [
+            Icon(icon, color: iconColor, size: 2.4.h),
+            SizedBox(width: 1.5.w),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 12.sp,
+                fontWeight: FontWeight.w600,
+                color: Colors.black,
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
+}
+
+class _SpecItem {
+  final IconData icon;
+  final String label;
+  final String value;
+  const _SpecItem(this.icon, this.label, this.value);
 }

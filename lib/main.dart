@@ -5,6 +5,7 @@ import 'package:new_app/src/app/my_app.dart';
 import 'package:new_app/src/pages/home/providers/cars_provider.dart';
 import 'package:new_app/src/pages/home/providers/subscribtion_provider.dart'; // ← добавить импорт
 import 'package:new_app/src/pages/pages.dart';
+import 'package:new_app/src/video/controller/main_tab_controller.dart';
 import 'package:provider/provider.dart';
 import 'firebase_options.dart';
 
@@ -24,7 +25,8 @@ void main() async {
       providers: [
         ChangeNotifierProvider(create: (_) => FavoritesProvider()),
         ChangeNotifierProvider(create: (_) => CarsProvider()),
-        ChangeNotifierProvider(create: (_) => SubscriptionsProvider()), // ← добавить
+        ChangeNotifierProvider(create: (_) => SubscriptionsProvider()), 
+        ChangeNotifierProvider(create: (_) => NavTabController()),// ← добавить
       ],
       child: const MyApp(),
     ),
