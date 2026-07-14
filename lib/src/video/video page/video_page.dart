@@ -5,12 +5,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import 'package:new_app/src/pages/home/providers/subscribtion_provider.dart';
 import 'package:new_app/src/pages/pages.dart';
+import 'package:new_app/src/video/controller/main_tab_controller.dart';
 import 'package:new_app/src/video/video%20page/comments/comments_sheet.dart';
 import 'package:new_app/src/video/video%20page/page/video_analytics_page.dart';
 import 'package:new_app/src/video/video%20page/profile/user_stats_page.dart';
+import 'package:new_app/src/video/cache/video_cache.dart';
 import 'package:provider/provider.dart';
 import 'package:responsive_sizer/responsive_sizer.dart';
 import 'package:video_player/video_player.dart';
@@ -21,8 +22,16 @@ import 'package:new_app/src/pages/home/providers/cars_provider.dart';
 
 class VideoPage extends StatefulWidget {
   /// Опционально: id авто, на которое нужно сразу открыть ленту
-  /// (например, переход "смотреть видео" с карточки объявления).
-  /// Если null — открывается обычная лента с начала.
+  /// (используется когда VideoPage создаётся ЗАНОВО отдельным push,
+  /// например из UserStatsPage/VideoAnalyticsPage). Если null — открывается
+  /// обычная лента с начала.
+  ///
+  /// ВАЖНО: когда VideoPage уже живёт постоянно внутри MainNavBar
+  /// (обычный случай — таб "Видео"), initState отрабатывает только один
+  /// раз при первом запуске приложения, поэтому переход на конкретное авто
+  /// ИЗ ДРУГИХ ТАБОВ (например, "Смотреть в ленте" на CarDetailPage) идёт
+  /// не через этот параметр, а через NavTabController.pendingVideoCarId —
+  /// см. _maybeJumpToPendingCar ниже.
   final String? initialCarId;
 
   const VideoPage({Key? key, this.initialCarId}) : super(key: key);
@@ -40,6 +49,10 @@ class _VideoPageState extends State<VideoPage> with WidgetsBindingObserver {
   late final PageController _pageController;
   late int _currentPage;
 
+  // Последний id из NavTabController.pendingVideoCarId, на который мы уже
+  // прыгнули — чтобы не прыгать повторно на каждый build.
+  String? _lastConsumedPendingCarId;
+
   bool _muted = false;
 
   // ВАЖНО: изначально false — иначе первый ролик стартует со звуком
@@ -53,7 +66,7 @@ class _VideoPageState extends State<VideoPage> with WidgetsBindingObserver {
   @override
   void initState() {
     super.initState();
-    
+
     WidgetsBinding.instance.addObserver(this);
 
     // Считаем начальный индекс СИНХРОННО, до первого построения PageView.
@@ -65,7 +78,9 @@ class _VideoPageState extends State<VideoPage> with WidgetsBindingObserver {
     _currentPage = foundIndex >= 0 ? foundIndex : 0;
     _pageController = PageController(initialPage: _currentPage);
 
-    _loadAuthor();
+    // КЕШ: заранее качаем ролики рядом со стартовой позицией.
+    if (cars.isNotEmpty) _prefetchAround(cars, _currentPage);
+
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _hideKeyboardHard();
     });
@@ -86,9 +101,59 @@ class _VideoPageState extends State<VideoPage> with WidgetsBindingObserver {
     super.dispose();
   }
 
+  /// КЕШ: заранее качаем следующие 1-2 ролика после [index], чтобы
+  /// свайп на следующее видео был без прогрузки.
+  void _prefetchAround(List<Car> cars, int index) {
+    for (var i = index + 1; i <= index + 2 && i < cars.length; i++) {
+      VideoCache.prefetch(cars[i].videoPath);
+    }
+  }
+
+  /// Реагирует на запрос перехода к конкретному авто из NavTabController
+  /// (кнопка «Смотреть в ленте» на странице деталей и т.п.). В отличие от
+  /// initialCarId, этот путь срабатывает даже когда VideoPage уже давно
+  /// живёт внутри MainNavBar и её initState отработал один раз в самом
+  /// начале — то есть именно тот случай, когда пользователь переключается
+  /// СЮДА из другого таба.
+  void _maybeJumpToPendingCar(List<Car> cars, String? carId) {
+    if (carId == null || carId == _lastConsumedPendingCarId) return;
+    if (cars.isEmpty) return;
+    final index = cars.indexWhere((c) => c.id == carId);
+    if (index < 0) return;
+
+    _lastConsumedPendingCarId = carId;
+    _prefetchAround(cars, index);
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      if (_pageController.hasClients) {
+        _pageController.jumpToPage(index);
+      }
+      setState(() => _currentPage = index);
+      // Сбрасываем запрос — иначе следующий build ленты попытается
+      // прыгнуть снова на то же авто.
+      context.read<NavTabController>().clearPendingVideoCarId();
+    });
+  }
+
+  /// Стрелка «назад» тапнута: возвращаем пользователя на CarDetailPage
+  /// того авто, с которого он открыл ленту. Обычный push — точно так же,
+  /// как при обычном тапе по карточке видео (_openDetail в _VideoReel).
+  void _handleBackToDetail(Car car) {
+    context.read<NavTabController>().clearCameFromDetail();
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => CarDetailPage(car: car)),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final cars = context.watch<CarsProvider>().carsWithVideo;
+    final nav = context.watch<NavTabController>();
+    _maybeJumpToPendingCar(cars, nav.pendingVideoCarId);
+
+    final backTargetCar = nav.cameFromDetailCar;
 
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: SystemUiOverlayStyle.light,
@@ -97,43 +162,97 @@ class _VideoPageState extends State<VideoPage> with WidgetsBindingObserver {
         // На этой странице нет полей ввода — клавиатура не должна
         // влиять на layout, даже если фокус случайно "просочился".
         resizeToAvoidBottomInset: false,
-        body: VisibilityDetector(
-          key: const Key('video-page-visibility'),
-          onVisibilityChanged: (info) {
-            final visible = info.visibleFraction > 0.5;
-            if (visible != _pageVisible) {
-              _pageVisible = visible;
-              if (visible) _hideKeyboardHard();
-              if (mounted) setState(() {});
-            }
-          },
-          child: cars.isEmpty
-              ? const _EmptyVideoState()
-              : PageView.builder(
-                  controller: _pageController,
-                  scrollDirection: Axis.vertical,
-                  itemCount: cars.length,
-                  onPageChanged: (i) => setState(() => _currentPage = i),
-                  itemBuilder: (context, index) {
-                    final car = cars[index];
-                    return _VideoReel(
-                      key: ValueKey(car.id),
-                      car: car,
-                      isActive: index == _currentPage,
-                      pageActive: _pageActive,
-                      muted: _muted,
-                      onToggleMute: () => setState(() => _muted = !_muted),
-                      saved: _saved.contains(car.id),
-                      onToggleSave: () => setState(() {
-                        if (_saved.contains(car.id)) {
-                          _saved.remove(car.id);
-                        } else {
-                          _saved.add(car.id);
-                        }
-                      }),
-                    );
-                  },
+        body: Stack(
+          children: [
+            VisibilityDetector(
+              key: const Key('video-page-visibility'),
+              onVisibilityChanged: (info) {
+                final visible = info.visibleFraction > 0.5;
+                if (visible != _pageVisible) {
+                  _pageVisible = visible;
+                  if (visible) _hideKeyboardHard();
+                  if (mounted) setState(() {});
+                }
+              },
+              child: cars.isEmpty
+                  ? const _EmptyVideoState()
+                  : PageView.builder(
+                      controller: _pageController,
+                      scrollDirection: Axis.vertical,
+                      itemCount: cars.length,
+                      onPageChanged: (i) {
+                        setState(() => _currentPage = i);
+                        // КЕШ: следующие ролики качаем заранее.
+                        _prefetchAround(cars, i);
+                      },
+                      itemBuilder: (context, index) {
+                        final car = cars[index];
+                        return _VideoReel(
+                          key: ValueKey(car.id),
+                          car: car,
+                          isActive: index == _currentPage,
+                          pageActive: _pageActive,
+                          muted: _muted,
+                          onToggleMute: () => setState(() => _muted = !_muted),
+                          saved: _saved.contains(car.id),
+                          onToggleSave: () => setState(() {
+                            if (_saved.contains(car.id)) {
+                              _saved.remove(car.id);
+                            } else {
+                              _saved.add(car.id);
+                            }
+                          }),
+                        );
+                      },
+                    ),
+            ),
+
+            // Стрелка «назад» — появляется ТОЛЬКО когда лента была открыта
+            // кнопкой «Смотреть в ленте» со страницы деталей авто. При
+            // обычном открытии таба "Видео" через нижний бар её нет —
+            // это же таб, а не отдельный экран.
+            if (backTargetCar != null)
+              Positioned(
+                top: 0,
+                left: 0,
+                child: SafeArea(
+                  child: Padding(
+                    padding: EdgeInsets.fromLTRB(4.w, 0.8.h, 0, 0),
+                    child: _BackButton(
+                      onTap: () => _handleBackToDetail(backTargetCar),
+                    ),
+                  ),
                 ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Кружок со стрелкой назад поверх видео — тот же визуальный язык,
+/// что и у остальных иконок ленты (тень для читаемости на любом фоне).
+class _BackButton extends StatelessWidget {
+  final VoidCallback onTap;
+  const _BackButton({required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: Container(
+        width: 4.6.h,
+        height: 4.6.h,
+        decoration: BoxDecoration(
+          color: Colors.black.withOpacity(0.4),
+          shape: BoxShape.circle,
+        ),
+        child: Icon(
+          Icons.arrow_back_rounded,
+          color: Colors.white,
+          size: 2.6.h,
         ),
       ),
     );
@@ -235,6 +354,22 @@ class _VideoReelState extends State<_VideoReel>
 
   bool _uiHidden = false;
 
+  // ── СКОРОСТЬ 2x ПРИ ДОЛГОМ НАЖАТИИ (как в TikTok) ────────────────────
+  // Долгое нажатие: UI прячется + видео играет на 2x. Пока палец зажат,
+  // можно вести его ВЛЕВО — вернётся обычная скорость, ВПРАВО — снова 2x.
+  // Отпустил — всё возвращается как было.
+  bool _longPressing = false;
+  bool _fast = false;
+  double _pressStartDx = 0;
+  double _pressStartDy = 0;
+
+  // ── ЗАКРЕПЛЁННАЯ 2x ─────────────────────────────────────────────────
+  // Во время долгого нажатия ведёшь палец ВНИЗ — 2x «закрепляется»:
+  // после отпускания видео ПРОДОЛЖАЕТ играть на 2x, UI возвращается,
+  // сверху висит бейдж «2x». Отключить: долгое нажатие + палец ВВЕРХ,
+  // или просто тап по бейджу.
+  bool _speedLocked = false;
+
   // Позиция двойного тапа — сердце появляется там, где тапнул
   // пользователь, а не по центру экрана.
   Offset? _doubleTapPosition;
@@ -273,42 +408,6 @@ class _VideoReelState extends State<_VideoReel>
         if (name != null && name.isNotEmpty) _ownerName = name;
       });
     } catch (_) {/* offline / нет документа — покажем инициалы */}
-  }
-
-  late final int _saveBase = 100 + ((widget.car.id.hashCode.abs() ~/ 7) % 3000);
-
-  // ── АВТОР РОЛИКА ─────────────────────────────────────────────────────
-  // БАГ-ФИКС: раньше имя/аватар брались из FirebaseAuth.currentUser —
-  // то есть у КАЖДОГО видео показывался ТЕКУЩИЙ пользователь, а не тот,
-  // кто опубликовал объявление. Теперь данные автора грузятся из
-  // users/{car.ownerId} — для каждого ролика свои.
-  String? _ownerName;
-  String? _ownerAvatarUrl;
-
-  // ----- Счётчик комментариев (комментарии + все ответы) -----
-  int _commentsTotal = 0;
-  StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _commentsSub;
-  int _recountGeneration = 0; // защита от гонки старых/новых пересчётов
-
-  CollectionReference<Map<String, dynamic>> get _commentsRef =>
-      FirebaseFirestore.instance
-          .collection('cars')
-          .doc(widget.car.id)
-          .collection('comments');
-
-  @override
-  void initState() {
-    super.initState();
-    _likeAnim = AnimationController(
-        vsync: this, duration: const Duration(milliseconds: 850));
-
-    // Видео готовим заранее (даже для неактивного reel) — так соседнее
-    // видео уже готово к моменту свайпа и лента ощущается плавной.
-    // Firestore-запросы и инкремент просмотров — только для активного.
-    _setupVideo();
-    if (widget.isActive) {
-      _loadHeavyData();
-    }
   }
 
   /// Загружает всё, что нужно только активному reel: профиль владельца,
@@ -369,7 +468,10 @@ class _VideoReelState extends State<_VideoReel>
     _refreshCommentsCount();
   }
 
-  void _setupVideo() {
+  /// КЕШ: если сетевое видео уже скачано (prefetch со страницы деталей
+  /// или предзагрузка соседних роликов) — играем локальный файл,
+  /// старт мгновенный. Если нет — играем по сети и параллельно кешируем.
+  Future<void> _setupVideo() async {
     final path = widget.car.videoPath;
     final isNetwork = path != null && path.startsWith('http');
     _hasVideo = path != null &&
@@ -378,29 +480,17 @@ class _VideoReelState extends State<_VideoReel>
     if (!_hasVideo) return;
 
     if (isNetwork) {
-      _setupNetworkVideoCached(path!);
-    } else {
-      _setupLocalVideo(path!);
-    }
-  }
-
-  // ФИКС #3: видео скачивается через flutter_cache_manager и кэшируется
-  // на диске. При повторном открытии того же видео оно берётся из
-  // локального кэша почти мгновенно, вместо повторного скачивания с сети.
-  Future<void> _setupNetworkVideoCached(String url) async {
-    try {
-      final file = await DefaultCacheManager().getSingleFile(url);
+      final cached = await VideoCache.cachedFile(path!);
       if (!mounted) return;
-      _startController(VideoPlayerController.file(file));
-    } catch (_) {
-      // Если кэш-менеджер не смог скачать (например, оффлайн) —
-      // пробуем напрямую как раньше, в качестве запасного варианта.
-      _startController(VideoPlayerController.networkUrl(Uri.parse(url)));
+      if (cached != null) {
+        _startController(VideoPlayerController.file(cached));
+      } else {
+        _startController(VideoPlayerController.networkUrl(Uri.parse(path)));
+        VideoCache.prefetch(path); // докачаем в фоне на следующий раз
+      }
+    } else {
+      _startController(VideoPlayerController.file(File(path!)));
     }
-  }
-
-  void _setupLocalVideo(String path) {
-    _startController(VideoPlayerController.file(File(path)));
   }
 
   void _startController(VideoPlayerController c) {
@@ -425,6 +515,21 @@ class _VideoReelState extends State<_VideoReel>
     } else {
       if (c.value.isPlaying) c.pause();
       if (!widget.isActive) c.seekTo(Duration.zero);
+    }
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _likeAnim = AnimationController(
+        vsync: this, duration: const Duration(milliseconds: 850));
+
+    // Видео готовим заранее (даже для неактивного reel) — так соседнее
+    // видео уже готово к моменту свайпа и лента ощущается плавной.
+    // Firestore-запросы и инкремент просмотров — только для активного.
+    _setupVideo();
+    if (widget.isActive) {
+      _loadHeavyData();
     }
   }
 
@@ -531,6 +636,90 @@ class _VideoReelState extends State<_VideoReel>
         SnackBar(content: Text(msg)),
       );
 
+  // ------------------------------------------------- long press 2x speed
+
+  void _onLongPressStart(LongPressStartDetails d) {
+    _pressStartDx = d.localPosition.dx;
+    _pressStartDy = d.localPosition.dy;
+    setState(() {
+      _uiHidden = true;
+      _longPressing = true;
+    });
+    if (_hasVideo && _initialized) _applySpeed(true);
+  }
+
+  void _onLongPressMove(LongPressMoveUpdateDetails d) {
+    if (!_longPressing || !_hasVideo || !_initialized) return;
+    final dx = d.localPosition.dx - _pressStartDx;
+    final dy = d.localPosition.dy - _pressStartDy;
+
+    // ВНИЗ более чем на 60px — закрепляем 2x (останется после отпускания).
+    // ВВЕРХ более чем на 60px — снимаем закрепление.
+    if (!_speedLocked && dy > 60) {
+      _speedLocked = true;
+      HapticFeedback.mediumImpact();
+      _applySpeed(true);
+      return;
+    }
+    if (_speedLocked && dy < -60) {
+      _speedLocked = false;
+      HapticFeedback.lightImpact();
+      _applySpeed(false);
+      return;
+    }
+    if (_speedLocked) return; // закреплено — горизонталь не трогаем
+
+    // Увёл палец влево более чем на 50px — обычная скорость.
+    // Вернул вправо — снова 2x. Гистерезис, чтобы не дёргалось на границе.
+    if (_fast && dx < -50) {
+      _applySpeed(false);
+    } else if (!_fast && dx > -20) {
+      _applySpeed(true);
+    }
+  }
+
+  void _applySpeed(bool fast) {
+    _fast = fast;
+    _controller?.setPlaybackSpeed(fast ? 2.0 : 1.0);
+    if (mounted) setState(() {});
+  }
+
+  void _onLongPressFinish() {
+    // Если 2x закреплена свайпом вниз — НЕ сбрасываем скорость:
+    // видео продолжает играть на 2x с бейджем сверху.
+    if (!_speedLocked) {
+      if (_hasVideo && _initialized) _controller?.setPlaybackSpeed(1.0);
+      _fast = false;
+    }
+    if (mounted) {
+      setState(() {
+        _uiHidden = false;
+        _longPressing = false;
+      });
+    }
+  }
+
+  /// Снять закреплённую 2x (тап по бейджу).
+  void _unlockSpeed() {
+    if (!_speedLocked) return;
+    _speedLocked = false;
+    HapticFeedback.lightImpact();
+    _applySpeed(false);
+  }
+
+  late final int _saveBase = 100 + ((widget.car.id.hashCode.abs() ~/ 7) % 3000);
+
+  // ----- Счётчик комментариев (комментарии + все ответы) -----
+  int _commentsTotal = 0;
+  StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _commentsSub;
+  int _recountGeneration = 0; // защита от гонки старых/новых пересчётов
+
+  CollectionReference<Map<String, dynamic>> get _commentsRef =>
+      FirebaseFirestore.instance
+          .collection('cars')
+          .doc(widget.car.id)
+          .collection('comments');
+
   @override
   Widget build(BuildContext context) {
     final car = widget.car;
@@ -542,9 +731,10 @@ class _VideoReelState extends State<_VideoReel>
           onDoubleTapDown: (details) =>
               _doubleTapPosition = details.localPosition,
           onDoubleTap: _onDoubleTap,
-          onLongPressStart: (_) => setState(() => _uiHidden = true),
-          onLongPressEnd: (_) => setState(() => _uiHidden = false),
-          onLongPressCancel: () => setState(() => _uiHidden = false),
+          onLongPressStart: _onLongPressStart,
+          onLongPressMoveUpdate: _onLongPressMove,
+          onLongPressEnd: (_) => _onLongPressFinish(),
+          onLongPressCancel: _onLongPressFinish,
           child: _mediaLayer(),
         ),
 
@@ -552,6 +742,14 @@ class _VideoReelState extends State<_VideoReel>
           IgnorePointer(child: Center(child: _centerPlay())),
 
         _likeBurst(),
+
+        // Индикатор скорости при долгом нажатии (2x / обычная + подсказка).
+        if (_longPressing && _hasVideo && _initialized) _speedOverlay(),
+
+        // Закреплённая 2x: палец отпущен, UI виден, видео играет на 2x.
+        // Бейдж сверху — тап по нему выключает.
+        if (_speedLocked && !_longPressing && _hasVideo && _initialized)
+          _lockedSpeedBadge(),
 
         IgnorePointer(
           ignoring: _uiHidden,
@@ -700,6 +898,138 @@ class _VideoReelState extends State<_VideoReel>
     );
   }
 
+  /// Индикатор при долгом нажатии: сверху бейдж «2x» (или «Обычная»)
+  /// и подсказка, куда вести палец, чтобы сменить скорость.
+  Widget _speedOverlay() {
+    return Positioned(
+      top: 0,
+      left: 0,
+      right: 0,
+      child: IgnorePointer(
+        child: SafeArea(
+          bottom: false,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              SizedBox(height: 1.2.h),
+              AnimatedContainer(
+                duration: const Duration(milliseconds: 150),
+                padding:
+                    EdgeInsets.symmetric(horizontal: 4.w, vertical: 0.8.h),
+                decoration: BoxDecoration(
+                  color: _fast
+                      ? Colors.white.withOpacity(0.92)
+                      : Colors.black.withOpacity(0.55),
+                  borderRadius: BorderRadius.circular(3.h),
+                  border: Border.all(
+                      color: Colors.white.withOpacity(0.4), width: 1),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      _fast
+                          ? Icons.fast_forward_rounded
+                          : Icons.play_arrow_rounded,
+                      size: 2.4.h,
+                      color: _fast ? Colors.black : Colors.white,
+                    ),
+                    SizedBox(width: 1.5.w),
+                    Text(
+                      _fast ? 'Скорость 2x' : 'Обычная скорость',
+                      style: TextStyle(
+                        fontSize: 12.5.sp,
+                        fontWeight: FontWeight.w800,
+                        color: _fast ? Colors.black : Colors.white,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              SizedBox(height: 0.8.h),
+              Text(
+                _speedLocked
+                    ? '2x закреплена · веди палец вверх — отключить'
+                    : _fast
+                        ? 'Влево — обычная · Вниз — закрепить 2x'
+                        : 'Вправо — 2x · Вниз — закрепить 2x',
+                style: TextStyle(
+                  fontSize: 11.sp,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.white.withOpacity(0.85),
+                  shadows: const [Shadow(color: Colors.black54, blurRadius: 8)],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Бейдж закреплённой 2x: висит сверху, пока скорость закреплена.
+  /// Виден вместе со всем остальным UI (лайки, комментарии и т.д.).
+  /// Тап по бейджу — выключить и вернуться к обычной скорости.
+  Widget _lockedSpeedBadge() {
+    return Positioned(
+      top: 0,
+      left: 0,
+      right: 0,
+      child: SafeArea(
+        bottom: false,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            SizedBox(height: 1.2.h),
+            GestureDetector(
+              onTap: _unlockSpeed,
+              behavior: HitTestBehavior.opaque,
+              child: Container(
+                padding:
+                    EdgeInsets.symmetric(horizontal: 3.5.w, vertical: 0.7.h),
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.92),
+                  borderRadius: BorderRadius.circular(3.h),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.25),
+                      blurRadius: 10,
+                      offset: const Offset(0, 3),
+                    ),
+                  ],
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.fast_forward_rounded,
+                        size: 2.2.h, color: Colors.black),
+                    SizedBox(width: 1.5.w),
+                    Text(
+                      '2x',
+                      style: TextStyle(
+                        fontSize: 12.sp,
+                        fontWeight: FontWeight.w800,
+                        color: Colors.black,
+                      ),
+                    ),
+                    SizedBox(width: 2.w),
+                    Container(
+                        width: 1,
+                        height: 1.8.h,
+                        color: Colors.black.withOpacity(0.15)),
+                    SizedBox(width: 2.w),
+                    Icon(Icons.close_rounded,
+                        size: 2.h, color: Colors.black54),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _topBar() {
     return Row(
       children: [
@@ -709,7 +1039,12 @@ class _VideoReelState extends State<_VideoReel>
           widget.onToggleMute,
         ),
         SizedBox(width: 3.w),
-        _iconBtn(Icons.search, () => _soon('Поиск скоро')),
+        _iconBtn(
+          Icons.search,
+          // Переключаем таб на "Поиск", а не push — тогда SearchPage
+          // открывается внутри MainNavBar и нижняя навигация остаётся видна.
+          () => context.read<NavTabController>().setIndex(1),
+        ),
         SizedBox(width: 3.w),
         _iconBtn(Icons.more_vert, () => _soon('Меню скоро')),
       ],
