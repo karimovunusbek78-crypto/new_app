@@ -285,7 +285,7 @@ class _VideoReelState extends State<_VideoReel>
   String? _ownerName;
   String? _ownerAvatarUrl;
 
-  // ----- Счётчик комментариев (комментарии + все ответы) -----
+  // ----- Счётчик комментариев (комментарии + все ответы) -----  
   int _commentsTotal = 0;
   StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _commentsSub;
   int _recountGeneration = 0; // защита от гонки старых/новых пересчётов
