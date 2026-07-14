@@ -8,11 +8,9 @@ import 'package:url_launcher/url_launcher.dart';
 
 class CarSellPage extends StatefulWidget {
   const CarSellPage({super.key});
-
   @override
   State<CarSellPage> createState() => _CarSellPageState();
 }
-
 class _CarSellPageState extends State<CarSellPage>
     with TickerProviderStateMixin {
   static const _accentDark = Color(0xFF111111);
