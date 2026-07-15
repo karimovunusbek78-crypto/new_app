@@ -377,6 +377,8 @@ class _VideoReelState extends State<_VideoReel>
   late final AnimationController _likeAnim;
 
   static const _accentBlue = Color(0xFF4DA6FF);
+  // Instagram-style like red.
+  static const _likeRed = Color(0xFFFF3040);
 
   // Данные ВЛАДЕЛЬЦА этого объявления (а не текущего пользователя).
   // Раньше имя/аватар приходили из VideoPage, где грузился профиль
@@ -758,11 +760,20 @@ class _VideoReelState extends State<_VideoReel>
             duration: const Duration(milliseconds: 200),
             child: SafeArea(
               child: Padding(
-                padding: EdgeInsets.symmetric(horizontal: 4.w),
+                // Правый отступ уменьшен — панель лайков/комментариев
+                // теперь ближе к правому краю экрана, освобождая больше
+                // места самому видео.
+                padding: EdgeInsets.only(left: 4.w, right: 2.2.w),
                 child: Column(
                   children: [
-                    SizedBox(height: 0.5.h),
-                    _topBar(),
+                    Padding(
+                      padding: EdgeInsets.only(right: 1.8.w),
+                      child: SizedBox(height: 0.5.h),
+                    ),
+                    Padding(
+                      padding: EdgeInsets.only(right: 1.8.w),
+                      child: _topBar(),
+                    ),
                     const Spacer(),
                     _bottomOverlay(car),
                     SizedBox(height: 1.h),
@@ -795,6 +806,9 @@ class _VideoReelState extends State<_VideoReel>
             child:
                 CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
           ),
+        // Градиент затемнения СНИЗУ/СВЕРХУ облегчён — видео должно
+        // читаться максимально хорошо, UI лишь слегка подсвечен снизу,
+        // чтобы текст/иконки оставались читаемыми на любом фоне.
         AnimatedOpacity(
           opacity: _uiHidden ? 0.0 : 1.0,
           duration: const Duration(milliseconds: 200),
@@ -804,12 +818,12 @@ class _VideoReelState extends State<_VideoReel>
                 begin: Alignment.topCenter,
                 end: Alignment.bottomCenter,
                 colors: [
-                  Colors.black.withOpacity(0.45),
+                  Colors.black.withOpacity(0.22),
                   Colors.transparent,
                   Colors.transparent,
-                  Colors.black.withOpacity(0.75),
+                  Colors.black.withOpacity(0.5),
                 ],
-                stops: const [0.0, 0.18, 0.5, 1.0],
+                stops: const [0.0, 0.14, 0.55, 1.0],
               ),
             ),
             child: const SizedBox.expand(),
@@ -1073,12 +1087,17 @@ class _VideoReelState extends State<_VideoReel>
           crossAxisAlignment: CrossAxisAlignment.end,
           children: [
             Expanded(child: _textBlock(car)),
-            SizedBox(width: 3.w),
+            SizedBox(width: 2.5.w),
             _actionRail(car),
           ],
         ),
-        SizedBox(height: 1.6.h),
-        _infoCard(car),
+        // Отступ до карточки уменьшен — вместе с компактной карточкой
+        // нижний блок стал заметно ниже, видео видно больше.
+        SizedBox(height: 1.h),
+        Padding(
+          padding: EdgeInsets.only(right: 1.8.w),
+          child: _infoCard(car),
+        ),
       ],
     );
   }
@@ -1091,7 +1110,7 @@ class _VideoReelState extends State<_VideoReel>
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _creatorRow(car),
-        SizedBox(height: 1.2.h),
+        SizedBox(height: 0.8.h),
         GestureDetector(
           onTap: _openDetail,
           behavior: HitTestBehavior.opaque,
@@ -1159,6 +1178,8 @@ class _VideoReelState extends State<_VideoReel>
     );
   }
 
+  // КОМПАКТНОСТЬ: аватар, имя и кнопка уменьшены, чтобы блок автора
+  // перекрывал меньше видео (было: аватар 9.w, имя 14, кнопки крупнее).
   Widget _creatorRow(Car car) {
     final name = (_ownerName != null && _ownerName!.isNotEmpty)
         ? _ownerName!
@@ -1184,12 +1205,12 @@ class _VideoReelState extends State<_VideoReel>
             mainAxisSize: MainAxisSize.min,
             children: [
               Container(
-                width: 9.w,
-                height: 9.w,
+                width: 7.w,
+                height: 7.w,
                 decoration: BoxDecoration(
                   color: Colors.white.withOpacity(0.2),
                   shape: BoxShape.circle,
-                  border: Border.all(color: Colors.white, width: 1.4),
+                  border: Border.all(color: Colors.white, width: 1.2),
                   image: hasAvatar
                       ? DecorationImage(
                           image: NetworkImage(_ownerAvatarUrl!),
@@ -1204,11 +1225,11 @@ class _VideoReelState extends State<_VideoReel>
                           style: TextStyle(
                               color: Colors.white,
                               fontWeight: FontWeight.w800,
-                              fontSize: 12.sp),
+                              fontSize: 10.sp),
                         ),
                       ),
               ),
-              SizedBox(width: 2.5.w),
+              SizedBox(width: 2.w),
               Flexible(
                 child: Text(
                   name,
@@ -1216,14 +1237,14 @@ class _VideoReelState extends State<_VideoReel>
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
                     color: Colors.white,
-                    fontSize: 14,
+                    fontSize: 12.5,
                     fontWeight: FontWeight.w700,
                     shadows: [Shadow(color: Colors.black54, blurRadius: 6)],
                   ),
                 ),
               ),
               SizedBox(width: 1.w),
-              Icon(Icons.verified_rounded, size: 1.9.h, color: _accentBlue),
+              Icon(Icons.verified_rounded, size: 1.6.h, color: _accentBlue),
             ],
           ),
         ),
@@ -1235,22 +1256,22 @@ class _VideoReelState extends State<_VideoReel>
           GestureDetector(
             onTap: _openVideoAnalytics,
             child: Container(
-              padding: EdgeInsets.symmetric(horizontal: 3.5.w, vertical: 0.7.h),
+              padding: EdgeInsets.symmetric(horizontal: 2.8.w, vertical: 0.45.h),
               decoration: BoxDecoration(
                 color: Colors.white,
                 borderRadius: BorderRadius.circular(6.w),
-                border: Border.all(color: Colors.white, width: 1.4),
+                border: Border.all(color: Colors.white, width: 1.2),
               ),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Icon(Icons.bar_chart_rounded,
-                      size: 1.9.h, color: Colors.black),
+                      size: 1.6.h, color: Colors.black),
                   SizedBox(width: 1.w),
                   Text(
                     'Аналитика',
                     style: TextStyle(
-                      fontSize: 11.sp,
+                      fontSize: 10.sp,
                       fontWeight: FontWeight.w700,
                       color: Colors.black,
                     ),
@@ -1268,16 +1289,16 @@ class _VideoReelState extends State<_VideoReel>
                     .toggleSubscribe(car.ownerId),
             child: AnimatedContainer(
               duration: const Duration(milliseconds: 150),
-              padding: EdgeInsets.symmetric(horizontal: 3.5.w, vertical: 0.7.h),
+              padding: EdgeInsets.symmetric(horizontal: 2.8.w, vertical: 0.45.h),
               decoration: BoxDecoration(
                 color: subscribed ? Colors.transparent : Colors.white,
                 borderRadius: BorderRadius.circular(6.w),
-                border: Border.all(color: Colors.white, width: 1.4),
+                border: Border.all(color: Colors.white, width: 1.2),
               ),
               child: Text(
                 subscribed ? 'Вы подписаны' : 'Подписаться',
                 style: TextStyle(
-                  fontSize: 11.sp,
+                  fontSize: 10.sp,
                   fontWeight: FontWeight.w700,
                   color: subscribed ? Colors.white : Colors.black,
                 ),
@@ -1288,6 +1309,9 @@ class _VideoReelState extends State<_VideoReel>
     );
   }
 
+  // ── ACTION RAIL — Instagram Reels-style: тонкие иконки (кроме сердца),
+  // без нижней миниатюры-«кружка», компактнее и ближе к правому краю,
+  // чтобы видео занимало максимум пространства.
   Widget _actionRail(Car car) {
     final cars = context.watch<CarsProvider>();
     final liked = cars.isLikedByMe(car.id);
@@ -1296,26 +1320,29 @@ class _VideoReelState extends State<_VideoReel>
       children: [
         _railButton(
           icon: liked ? Icons.favorite_rounded : Icons.favorite_border_rounded,
-          color: liked ? Colors.red : Colors.white,
+          color: liked ? _likeRed : Colors.white,
           text: _fmtCount(car.likesCount),
           // Лайк также добавляет/убирает авто из «Избранного».
           onTap: _toggleLikeSynced,
+          iconSize: 2.7.h,
         ),
-        SizedBox(height: 2.2.h),
+        SizedBox(height: 1.4.h),
         _railButton(
-          icon: Icons.mode_comment_rounded,
+          icon: Icons.mode_comment_outlined,
           color: Colors.white,
           text: _fmtCount(_commentsTotal),
           onTap: _openComments,
+          iconSize: 2.6.h,
         ),
-        SizedBox(height: 2.2.h),
+        SizedBox(height: 1.4.h),
         _railButton(
-          icon: Icons.reply_rounded,
+          icon: Icons.share_outlined,
           color: Colors.white,
           text: 'Поделиться',
           onTap: () => _soon('Скоро можно будет делиться объявлением'),
+          iconSize: 2.6.h,
         ),
-        SizedBox(height: 2.2.h),
+        SizedBox(height: 1.4.h),
         _railButton(
           icon: widget.saved
               ? Icons.bookmark_rounded
@@ -1323,9 +1350,8 @@ class _VideoReelState extends State<_VideoReel>
           color: Colors.white,
           text: _fmtCount(_saveBase + (widget.saved ? 1 : 0)),
           onTap: widget.onToggleSave,
+          iconSize: 2.6.h,
         ),
-        SizedBox(height: 2.2.h),
-        _railThumb(),
       ],
     );
   }
@@ -1335,26 +1361,28 @@ class _VideoReelState extends State<_VideoReel>
     required Color color,
     required String text,
     required VoidCallback onTap,
+    double? iconSize,
   }) {
     return GestureDetector(
       onTap: onTap,
       behavior: HitTestBehavior.opaque,
       child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
           Icon(
             icon,
             color: color,
-            size: 3.6.h,
-            shadows: const [Shadow(color: Colors.black54, blurRadius: 6)],
+            size: iconSize ?? 3.2.h,
+            shadows: const [Shadow(color: Colors.black45, blurRadius: 4)],
           ),
-          SizedBox(height: 0.5.h),
+          SizedBox(height: 0.35.h),
           Text(
             text,
             style: const TextStyle(
               color: Colors.white,
-              fontSize: 11,
+              fontSize: 10,
               fontWeight: FontWeight.w600,
-              shadows: [Shadow(color: Colors.black54, blurRadius: 6)],
+              shadows: [Shadow(color: Colors.black45, blurRadius: 4)],
             ),
           ),
         ],
@@ -1362,93 +1390,76 @@ class _VideoReelState extends State<_VideoReel>
     );
   }
 
-  Widget _railThumb() {
-    return GestureDetector(
-      onTap: _openDetail,
-      child: Container(
-        width: 11.w,
-        height: 11.w,
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(2.5.w),
-          border: Border.all(color: Colors.white, width: 1.5),
-          color: Colors.black26,
-        ),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(2.1.w),
-          child: widget.car.photoPaths.isNotEmpty
-              ? _image(widget.car.photoPaths.first)
-              : Icon(Icons.directions_car_outlined,
-                  color: Colors.white70, size: 2.6.h),
-        ),
-      ),
-    );
-  }
-
+  /// КОМПАКТНАЯ карточка авто (примерно в 2 раза ниже прежней):
+  /// одна строка — мини-фото, название + цена и краткие статы
+  /// «год · пробег · просмотры» вместо высокой карточки с отдельным
+  /// блоком статистики. Видео перекрывается заметно меньше.
+  /// Тап — страница деталей авто (как раньше).
   Widget _infoCard(Car car) {
     return GestureDetector(
       onTap: _openDetail,
       child: ClipRRect(
-        borderRadius: BorderRadius.circular(4.5.w),
+        borderRadius: BorderRadius.circular(3.5.w),
         child: BackdropFilter(
           filter: ui.ImageFilter.blur(sigmaX: 18, sigmaY: 18),
           child: Container(
-            padding: EdgeInsets.all(3.5.w),
+            padding: EdgeInsets.symmetric(horizontal: 2.8.w, vertical: 1.h),
             decoration: BoxDecoration(
               color: Colors.white.withOpacity(0.12),
-              borderRadius: BorderRadius.circular(4.5.w),
+              borderRadius: BorderRadius.circular(3.5.w),
               border: Border.all(color: Colors.white.withOpacity(0.18)),
             ),
-            child: Column(
+            child: Row(
               children: [
-                Row(
-                  children: [
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(2.5.w),
-                      child:
-                          SizedBox(width: 13.w, height: 13.w, child: _thumb()),
-                    ),
-                    SizedBox(width: 3.w),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(2.w),
+                  child:
+                      SizedBox(width: 10.w, height: 10.w, child: _thumb()),
+                ),
+                SizedBox(width: 2.5.w),
+                Expanded(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
                         children: [
-                          Text(
-                            car.name,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                                fontSize: 13.sp,
-                                fontWeight: FontWeight.w700,
-                                color: Colors.white),
+                          Expanded(
+                            child: Text(
+                              car.name,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                  fontSize: 11.5.sp,
+                                  fontWeight: FontWeight.w700,
+                                  color: Colors.white),
+                            ),
                           ),
-                          SizedBox(height: 0.3.h),
+                          SizedBox(width: 2.w),
                           Text(
                             _priceText(car),
                             style: TextStyle(
-                                fontSize: 15.sp,
+                                fontSize: 12.5.sp,
                                 fontWeight: FontWeight.w800,
                                 color: _accentBlue),
                           ),
                         ],
                       ),
-                    ),
-                    Icon(Icons.chevron_right_rounded,
-                        color: Colors.white.withOpacity(0.7), size: 3.h),
-                  ],
+                      SizedBox(height: 0.35.h),
+                      Text(
+                        _cardStatsLine(car),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                            fontSize: 10.sp,
+                            color: Colors.white.withOpacity(0.75)),
+                      ),
+                    ],
+                  ),
                 ),
-                SizedBox(height: 1.3.h),
-                Container(height: 1, color: Colors.white.withOpacity(0.15)),
-                SizedBox(height: 1.1.h),
-                Row(
-                  children: [
-                    _stat(Icons.event_outlined, car.year, 'Год'),
-                    _statDivider(),
-                    _stat(Icons.speed_outlined, '${car.km} км', 'Пробег'),
-                    _statDivider(),
-                    _stat(Icons.remove_red_eye_outlined,
-                        _fmtCount(car.viewsCount), 'Просмотры'),
-                  ],
-                ),
+                SizedBox(width: 1.w),
+                Icon(Icons.chevron_right_rounded,
+                    color: Colors.white.withOpacity(0.7), size: 2.4.h),
               ],
             ),
           ),
@@ -1457,51 +1468,26 @@ class _VideoReelState extends State<_VideoReel>
     );
   }
 
+  /// «Год · пробег · просмотры» одной строкой для компактной карточки.
+  String _cardStatsLine(Car car) {
+    final p = <String>[];
+    if (car.year.trim().isNotEmpty) p.add('${car.year.trim()} г.');
+    if (car.km.trim().isNotEmpty) p.add('${car.km.trim()} км');
+    p.add('${_fmtCount(car.viewsCount)} просм.');
+    return p.join(' · ');
+  }
+
   Widget _thumb() {
     final photos = widget.car.photoPaths;
     if (photos.isEmpty) {
       return Container(
         color: Colors.white.withOpacity(0.12),
         child: Icon(Icons.directions_car_outlined,
-            color: Colors.white54, size: 3.h),
+            color: Colors.white54, size: 2.4.h),
       );
     }
     return _image(photos.first);
   }
-
-  Widget _stat(IconData icon, String value, String label) {
-    return Expanded(
-      child: Column(
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(icon, size: 1.9.h, color: Colors.white),
-              SizedBox(width: 1.w),
-              Flexible(
-                child: Text(
-                  value.trim().isEmpty ? '—' : value,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                      fontSize: 11.5.sp,
-                      fontWeight: FontWeight.w700,
-                      color: Colors.white),
-                ),
-              ),
-            ],
-          ),
-          SizedBox(height: 0.2.h),
-          Text(label,
-              style: TextStyle(
-                  fontSize: 9.5.sp, color: Colors.white.withOpacity(0.6))),
-        ],
-      ),
-    );
-  }
-
-  Widget _statDivider() =>
-      Container(width: 1, height: 3.5.h, color: Colors.white.withOpacity(0.15));
 
   String _priceText(Car car) {
     final p = car.price.trim();
