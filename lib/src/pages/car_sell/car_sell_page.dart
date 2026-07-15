@@ -23,7 +23,6 @@ class CarSellPage extends StatefulWidget {
   @override
   State<CarSellPage> createState() => _CarSellPageState();
 }
-
 class _CarSellPageState extends State<CarSellPage>
     with TickerProviderStateMixin {
   // Accent colors
@@ -407,7 +406,6 @@ class _CarSellPageState extends State<CarSellPage>
       ),
     );
   }
-
   // ── Permission required screen ─────────────────────────────────
   Widget _buildPermissionView() {
     return FadeTransition(
