@@ -12,7 +12,6 @@ import 'package:new_app/src/video/controller/main_tab_controller.dart';
 import 'package:new_app/src/video/video%20page/comments/comments_sheet.dart';
 import 'package:provider/provider.dart';
 import 'package:responsive_sizer/responsive_sizer.dart';
-import 'package:video_player/video_player.dart';
 
 class CarDetailPage extends StatefulWidget {
   final Car car;
@@ -27,13 +26,9 @@ class _CarDetailPageState extends State<CarDetailPage> {
   static const _bg = Color(0xFFF6F6F8);
   static const _grey = Color(0xFF8A8A8E);
 
-  // ----- Видео (ленивая инициализация — грузим только когда пользователь
-  // нажал "Смотреть видео", чтобы не тратить трафик зря) -----
-  VideoPlayerController? _video;
-  bool _videoOpen = false;
-  bool _videoReady = false;
-  bool _videoError = false;
-  bool _videoMuted = false;
+  // Есть ли у объявления видео. Само видео здесь больше НЕ проигрывается:
+  // нажатие «Смотреть видеообзор» открывает вертикальную видеоленту
+  // (VideoPage) сразу на этом авто — как переход в TikTok-режим.
   late final bool _hasVideo;
 
   // ----- Счётчик комментариев: та же логика, что и на видеостранице
@@ -101,16 +96,8 @@ class _CarDetailPageState extends State<CarDetailPage> {
   }
 
   @override
-  void deactivate() {
-    _video?.pause();
-    super.deactivate();
-  }
-
-  @override
   void dispose() {
     _commentsSub?.cancel();
-    _video?.removeListener(_onVideoTick);
-    _video?.dispose();
     super.dispose();
   }
 
@@ -129,7 +116,6 @@ class _CarDetailPageState extends State<CarDetailPage> {
   }
 
   Future<void> _openComments() async {
-    _video?.pause();
     await CommentsSheet.show(context, widget.car.id);
     if (!mounted) return;
     // КЛАВИАТУРА: поле ввода живёт только в шторке комментариев.
@@ -139,7 +125,7 @@ class _CarDetailPageState extends State<CarDetailPage> {
     _refreshCommentsCount();
   }
 
-  /// «Смотреть в ленте».
+  /// «Смотреть видеообзор» / «Смотреть в ленте».
   ///
   /// БЫЛО: Navigator.push(VideoPage(...)) — открывало ленту отдельным
   /// full-screen роутом БЕЗ нижнего navbar (у пушнутого роута его просто
@@ -155,7 +141,6 @@ class _CarDetailPageState extends State<CarDetailPage> {
   /// MainNavBar и CarDetailPage есть ещё какой-то обёрточный роут —
   /// поправь условие под свою структуру навигации.
   void _openInLenta() {
-    _video?.pause();
     FocusManager.instance.primaryFocus?.unfocus();
     context.read<NavTabController>().openVideoFeed(carId: widget.car.id);
     Navigator.of(context).popUntil((route) => route.isFirst);
@@ -168,73 +153,6 @@ class _CarDetailPageState extends State<CarDetailPage> {
 
   void _soon(String msg) => ScaffoldMessenger.of(context)
       .showSnackBar(SnackBar(content: Text(msg)));
-
-  // ------------------------------------------------------------------ video
-
-  void _onVideoTick() {
-    if (mounted) setState(() {});
-  }
-
-  Future<void> _startVideo() async {
-    if (_video != null) {
-      setState(() => _videoOpen = true);
-      _video!.play();
-      return;
-    }
-    setState(() {
-      _videoOpen = true;
-      _videoError = false;
-    });
-    final path = widget.car.videoPath!;
-
-    // КЕШ: если сетевой ролик уже скачан — играем локальный файл
-    // (мгновенный старт). Если ещё нет — играем по сети, а кеш
-    // докачается в фоне и пригодится ленте.
-    VideoPlayerController c;
-    if (path.startsWith('http')) {
-      final cached = await VideoCache.cachedFile(path);
-      if (!mounted) return;
-      if (cached != null) {
-        c = VideoPlayerController.file(cached);
-      } else {
-        c = VideoPlayerController.networkUrl(Uri.parse(path));
-        VideoCache.prefetch(path);
-      }
-    } else {
-      c = VideoPlayerController.file(File(path));
-    }
-
-    _video = c;
-    try {
-      await c.initialize();
-      if (!mounted) return;
-      c.setLooping(true);
-      c.setVolume(_videoMuted ? 0.0 : 1.0);
-      c.addListener(_onVideoTick);
-      setState(() => _videoReady = true);
-      c.play();
-    } catch (_) {
-      if (mounted) setState(() => _videoError = true);
-    }
-  }
-
-  void _collapseVideo() {
-    _video?.pause();
-    setState(() => _videoOpen = false);
-  }
-
-  void _toggleVideoPlay() {
-    final c = _video;
-    if (c == null || !_videoReady) return;
-    c.value.isPlaying ? c.pause() : c.play();
-    setState(() {});
-  }
-
-  void _toggleVideoMute() {
-    _videoMuted = !_videoMuted;
-    _video?.setVolume(_videoMuted ? 0.0 : 1.0);
-    setState(() {});
-  }
 
   // ------------------------------------------------------------------ build
 
@@ -455,12 +373,7 @@ class _CarDetailPageState extends State<CarDetailPage> {
       padding: EdgeInsets.all(2.5.w),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(3.5.w),
-        child: AnimatedSize(
-          duration: const Duration(milliseconds: 250),
-          curve: Curves.easeOut,
-          alignment: Alignment.topCenter,
-          child: _videoOpen ? _videoPlayer() : _videoPoster(car),
-        ),
+        child: _videoPoster(car),
       ),
     );
   }
@@ -538,7 +451,8 @@ class _CarDetailPageState extends State<CarDetailPage> {
 
   Widget _videoPoster(Car car) {
     return GestureDetector(
-      onTap: _startVideo,
+      // Переход в видеоленту, открытую на этом авто (с сохранённым navbar).
+      onTap: _openInLenta,
       child: AspectRatio(
         aspectRatio: 16 / 9,
         child: Stack(
@@ -608,121 +522,6 @@ class _CarDetailPageState extends State<CarDetailPage> {
             ),
           ],
         ),
-      ),
-    );
-  }
-
-  Widget _videoPlayer() {
-    if (_videoError) {
-      return AspectRatio(
-        aspectRatio: 16 / 9,
-        child: Container(
-          color: const Color(0xFF111111),
-          child: Center(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(Icons.error_outline_rounded,
-                    color: Colors.white54, size: 4.h),
-                SizedBox(height: 1.h),
-                Text(
-                  'Не удалось загрузить видео',
-                  style: TextStyle(color: Colors.white70, fontSize: 12.sp),
-                ),
-                SizedBox(height: 1.h),
-                TextButton(
-                  onPressed: _collapseVideo,
-                  child: const Text('Закрыть'),
-                ),
-              ],
-            ),
-          ),
-        ),
-      );
-    }
-
-    final c = _video;
-    if (c == null || !_videoReady) {
-      return const AspectRatio(
-        aspectRatio: 16 / 9,
-        child: ColoredBox(
-          color: Color(0xFF111111),
-          child: Center(
-            child: CircularProgressIndicator(
-                color: Colors.white, strokeWidth: 2),
-          ),
-        ),
-      );
-    }
-
-    final playing = c.value.isPlaying;
-    return AspectRatio(
-      aspectRatio: c.value.aspectRatio,
-      child: GestureDetector(
-        onTap: _toggleVideoPlay,
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            VideoPlayer(c),
-            AnimatedOpacity(
-              opacity: playing ? 0.0 : 1.0,
-              duration: const Duration(milliseconds: 180),
-              child: Container(
-                color: Colors.black26,
-                child: Center(
-                  child: Icon(Icons.play_arrow_rounded,
-                      color: Colors.white, size: 7.h),
-                ),
-              ),
-            ),
-            Positioned(
-              top: 1.h,
-              right: 2.5.w,
-              child: Row(
-                children: [
-                  _videoOverlayButton(
-                    _videoMuted
-                        ? Icons.volume_off_rounded
-                        : Icons.volume_up_rounded,
-                    _toggleVideoMute,
-                  ),
-                  SizedBox(width: 2.w),
-                  _videoOverlayButton(Icons.close_rounded, _collapseVideo),
-                ],
-              ),
-            ),
-            Positioned(
-              left: 0,
-              right: 0,
-              bottom: 0,
-              child: VideoProgressIndicator(
-                c,
-                allowScrubbing: true,
-                padding: EdgeInsets.zero,
-                colors: const VideoProgressColors(
-                  playedColor: _accent,
-                  bufferedColor: Colors.white38,
-                  backgroundColor: Colors.white12,
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _videoOverlayButton(IconData icon, VoidCallback onTap) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        width: 4.4.h,
-        height: 4.4.h,
-        decoration: BoxDecoration(
-          color: Colors.black.withOpacity(0.45),
-          shape: BoxShape.circle,
-        ),
-        child: Icon(icon, color: Colors.white, size: 2.4.h),
       ),
     );
   }
