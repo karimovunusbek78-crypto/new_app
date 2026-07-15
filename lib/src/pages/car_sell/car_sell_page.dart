@@ -26,7 +26,7 @@ class CarSellPage extends StatefulWidget {
 class _CarSellPageState extends State<CarSellPage>
     with TickerProviderStateMixin {
   // Accent colors
-  static const _accentDark = Color(0xFF111111);
+  static const _accentDark = Color(0xFF111111);                              
   static const _accentBlue = Color(0xFF5B4FD9);
 
   // Your contact details
@@ -132,7 +132,6 @@ class _CarSellPageState extends State<CarSellPage>
         }
       }
     });
-
     // Start listening to the permission document (live updates). When the
     // admin grants access, the Consumer below moves on to CarPublishPage
     // on its own.
@@ -142,7 +141,6 @@ class _CarSellPageState extends State<CarSellPage>
       }
     });
   }
-
   @override
   void dispose() {
     _fadeController.dispose();
