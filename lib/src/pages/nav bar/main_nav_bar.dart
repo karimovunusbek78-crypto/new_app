@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:new_app/src/video/controller/main_tab_controller.dart';
+import 'package:provider/provider.dart';
 import 'package:new_app/src/video/video%20page/video_page.dart';
 import 'package:responsive_sizer/responsive_sizer.dart';
 import 'package:new_app/src/pages/pages.dart';
@@ -14,13 +16,15 @@ class MainNavBar extends StatefulWidget {
 }
 
 class _MainNavBarState extends State<MainNavBar> {
-  int _currentIndex = 0;
-
   late final List<Widget> _pages;
 
   @override
   void initState() {
     super.initState();
+    // ВАЖНО: VideoPage больше не получает initialCarId здесь — переход на
+    // конкретное авто в ленте теперь идёт через NavTabController.pendingVideoCarId
+    // (см. video_page.dart), т.к. эта страница создаётся один раз и живёт
+    // всё время внутри _FadeIndexedStack.
     _pages = [
       HomePage(onSearchTap: () => _onTap(1)),
       const SearchPage(),
@@ -30,9 +34,10 @@ class _MainNavBarState extends State<MainNavBar> {
   }
 
   void _onTap(int index) {
-    if (index == _currentIndex) return;
+    final nav = context.read<NavTabController>();
+    if (index == nav.currentIndex) return;
     HapticFeedback.lightImpact();
-    setState(() => _currentIndex = index);
+    nav.setIndex(index);
   }
 
   void _onAddTap() {
@@ -52,15 +57,19 @@ class _MainNavBarState extends State<MainNavBar> {
 
   @override
   Widget build(BuildContext context) {
+    // Слушаем контроллер: таб может переключиться программно
+    // (например, из CarDetailPage._openInLenta()), а не только тапом.
+    final currentIndex = context.watch<NavTabController>().currentIndex;
+
     return Scaffold(
       backgroundColor: Colors.white,
       body: _FadeIndexedStack(
-        index: _currentIndex,
+        index: currentIndex,
         children: _pages,
       ),
       bottomNavigationBar: _BottomNav(
         items: _items,
-        currentIndex: _currentIndex,
+        currentIndex: currentIndex,
         onTap: _onTap,
         onAddTap: _onAddTap,
       ),
