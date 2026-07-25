@@ -12,6 +12,7 @@ import 'package:new_app/src/video/controller/main_tab_controller.dart';
 import 'package:new_app/src/video/video%20page/comments/comments_sheet.dart';
 import 'package:provider/provider.dart';
 import 'package:responsive_sizer/responsive_sizer.dart';
+import 'package:video_player/video_player.dart';
 
 class CarDetailPage extends StatefulWidget {
   final Car car;
@@ -26,10 +27,28 @@ class _CarDetailPageState extends State<CarDetailPage> {
   static const _bg = Color(0xFFF6F6F8);
   static const _grey = Color(0xFF8A8A8E);
 
-  // Есть ли у объявления видео. Само видео здесь больше НЕ проигрывается:
-  // нажатие «Смотреть видеообзор» открывает вертикальную видеоленту
-  // (VideoPage) сразу на этом авто — как переход в TikTok-режим.
+  // Есть ли у объявления видео.
+  //
+  // ПОВЕДЕНИЕ (обновлено): тап по самому превью видео теперь проигрывает
+  // ролик ПРЯМО ЗДЕСЬ, инлайн, на странице деталей — как обычный видео-
+  // плеер, без перехода куда-либо. Переход в вертикальную видеоленту
+  // (VideoPage / TikTok-режим) происходит ТОЛЬКО через отдельный блок
+  // «Смотреть в ленте» ниже видео (_lentaCard → _openInLenta).
   late final bool _hasVideo;
+
+  // ── Инлайн-плеер ──────────────────────────────────────────────────
+  VideoPlayerController? _controller;
+  bool _videoInitializing = false;
+  bool _videoInitialized = false;
+  bool _videoStarted = false; // true после первого тапа по превью
+  bool _isMuted = false; // звук вкл/выкл (иконка динамика на видео)
+  bool _isFastForwarding = false; // держим палец — 2x скорость
+
+  // ── Свайп по видео — перемотка (как в TikTok/Reels) ────────────────
+  Duration? _dragStartPosition; // позиция видео на момент начала свайпа
+  Duration? _seekPreviewPosition; // куда перематываем прямо сейчас (для UI)
+  double _dragTotalDx = 0; // суммарное смещение пальца по горизонтали
+  bool _wasPlayingBeforeDrag = false; // играло ли видео до начала свайпа
 
   // ----- Счётчик комментариев: та же логика, что и на видеостранице
   // (верхний уровень стримом + count() по replies каждого комментария) -----
@@ -54,8 +73,8 @@ class _CarDetailPageState extends State<CarDetailPage> {
         (isNetwork || File(path).existsSync());
 
     // КЕШ: пока пользователь читает объявление — тихо качаем видео на диск.
-    // К моменту нажатия «Смотреть видео» / «Смотреть в ленте» ролик уже
-    // будет локальным и стартует мгновенно, без лагов.
+    // К моменту нажатия на превью / «Смотреть в ленте» ролик уже будет
+    // локальным и стартует мгновенно, без лагов.
     if (_hasVideo && isNetwork) VideoCache.prefetch(path);
 
     context.read<CarsProvider>().loadLikeState(widget.car.id);
@@ -98,6 +117,7 @@ class _CarDetailPageState extends State<CarDetailPage> {
   @override
   void dispose() {
     _commentsSub?.cancel();
+    _controller?.dispose();
     super.dispose();
   }
 
@@ -116,7 +136,10 @@ class _CarDetailPageState extends State<CarDetailPage> {
   }
 
   Future<void> _openComments() async {
-    await CommentsSheet.show(context, widget.car.id);
+    // ownerId объявления передаётся в шторку комментариев — нужен, чтобы
+    // отметить комментарии владельца бейджем "Автор" и дать ему право
+    // закреплять/удалять любые комментарии (см. comments_sheet.dart).
+    await CommentsSheet.show(context, widget.car.id, widget.car.ownerId);
     if (!mounted) return;
     // КЛАВИАТУРА: поле ввода живёт только в шторке комментариев.
     // После её закрытия жёстко снимаем фокус, чтобы клавиатура
@@ -125,7 +148,8 @@ class _CarDetailPageState extends State<CarDetailPage> {
     _refreshCommentsCount();
   }
 
-  /// «Смотреть видеообзор» / «Смотреть в ленте».
+  /// «Смотреть в ленте» — единственный способ уйти в вертикальную
+  /// видоленту (TikTok-режим) с этой страницы.
   ///
   /// БЫЛО: Navigator.push(VideoPage(...)) — открывало ленту отдельным
   /// full-screen роутом БЕЗ нижнего navbar (у пушнутого роута его просто
@@ -136,13 +160,23 @@ class _CarDetailPageState extends State<CarDetailPage> {
   /// (popUntil до корневого роута). Navbar остаётся на экране, т.к.
   /// лента теперь открывается ВНУТРИ MainNavBar, а не поверх него.
   ///
+  /// ФИКС: раньше здесь вызывался openVideoFeed(carId: ...), который
+  /// специально ОБНУЛЯЕТ cameFromDetailCar — из-за этого VideoPage не
+  /// показывала стрелку «назад», хотя лента была открыта именно со
+  /// страницы деталей. Теперь вызывается openVideoFeedFromDetail(car),
+  /// который сохраняет это авто как cameFromDetailCar — VideoPage сама
+  /// проверяет это значение и рисует стрелку «назад», ведущую обратно
+  /// сюда (см. _handleBackToDetail в video_page.dart).
+  ///
   /// ВАЖНО: popUntil((route) => route.isFirst) предполагает, что
   /// MainNavBar — корневой (первый) роут приложения. Если у тебя между
   /// MainNavBar и CarDetailPage есть ещё какой-то обёрточный роут —
   /// поправь условие под свою структуру навигации.
   void _openInLenta() {
     FocusManager.instance.primaryFocus?.unfocus();
-    context.read<NavTabController>().openVideoFeed(carId: widget.car.id);
+    // Если инлайн-видео уже играет — останавливаем перед уходом в ленту.
+    _controller?.pause();
+    context.read<NavTabController>().openVideoFeedFromDetail(widget.car);
     Navigator.of(context).popUntil((route) => route.isFirst);
   }
 
@@ -153,6 +187,146 @@ class _CarDetailPageState extends State<CarDetailPage> {
 
   void _soon(String msg) => ScaffoldMessenger.of(context)
       .showSnackBar(SnackBar(content: Text(msg)));
+
+  // ------------------------------------------------------- inline player
+
+  /// Тап по превью видео: запускает инлайн-плеер ПРЯМО НА ЭТОЙ странице.
+  /// Ничего никуда не открывает — видео проигрывается на месте.
+  Future<void> _startInlineVideo() async {
+    if (_videoInitializing || _videoInitialized) {
+      _togglePlayPause();
+      return;
+    }
+    final path = widget.car.videoPath;
+    if (path == null || path.isEmpty) return;
+
+    setState(() {
+      _videoStarted = true;
+      _videoInitializing = true;
+    });
+
+    try {
+      final isNetwork = path.startsWith('http');
+      VideoPlayerController controller;
+      if (isNetwork) {
+        final cached = await VideoCache.cachedFile(path);
+        controller = cached != null
+            ? VideoPlayerController.file(cached)
+            : VideoPlayerController.networkUrl(Uri.parse(path));
+      } else {
+        controller = VideoPlayerController.file(File(path));
+      }
+
+      await controller.initialize();
+      if (!mounted) {
+        controller.dispose();
+        return;
+      }
+      controller.setLooping(true);
+      _controller = controller;
+      setState(() {
+        _videoInitializing = false;
+        _videoInitialized = true;
+      });
+      controller.play();
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          _videoInitializing = false;
+          _videoStarted = false;
+        });
+        _soon('Не удалось загрузить видео');
+      }
+    }
+  }
+
+  void _togglePlayPause() {
+    final c = _controller;
+    if (c == null || !_videoInitialized) return;
+    setState(() {
+      c.value.isPlaying ? c.pause() : c.play();
+    });
+  }
+
+  /// Кнопка звука на видео — просто mute/unmute, не влияет на состояние
+  /// плеера (играет/на паузе).
+  void _toggleMute() {
+    final c = _controller;
+    if (c == null) return;
+    setState(() {
+      _isMuted = !_isMuted;
+      c.setVolume(_isMuted ? 0.0 : 1.0);
+    });
+  }
+
+  /// Зажали палец на видео (и держим, не отпуская) — ускоряем до 2x,
+  /// как в TikTok/Reels. Работает всё время, пока палец удерживается.
+  void _startFastForward() {
+    final c = _controller;
+    if (c == null || !_videoInitialized) return;
+    setState(() => _isFastForwarding = true);
+    c.setPlaybackSpeed(2.0);
+  }
+
+  /// Отпустили палец (или жест отменился) — возвращаем обычную скорость.
+  void _stopFastForward() {
+    final c = _controller;
+    if (c == null || !_isFastForwarding) return;
+    setState(() => _isFastForwarding = false);
+    c.setPlaybackSpeed(1.0);
+  }
+
+  String _formatDuration(Duration d) {
+    if (d.isNegative || d == Duration.zero) return '0:00';
+    final minutes = d.inMinutes.remainder(60);
+    final seconds = d.inSeconds.remainder(60).toString().padLeft(2, '0');
+    return '$minutes:$seconds';
+  }
+
+  // ------------------------------------------------------ swipe-to-seek
+
+  /// Начали свайп по видео — ставим на паузу и запоминаем, с какого места
+  /// стартуем перемотку (чтобы считать смещение от него, а не от нуля).
+  void _onSeekDragStart(DragStartDetails details) {
+    final c = _controller;
+    if (c == null || !_videoInitialized) return;
+    _stopFastForward(); // на случай если случайно совпало с долгим тапом
+    _wasPlayingBeforeDrag = c.value.isPlaying;
+    c.pause();
+    _dragTotalDx = 0;
+    _dragStartPosition = c.value.position;
+    setState(() => _seekPreviewPosition = _dragStartPosition);
+  }
+
+  /// Двигаем палец — пересчитываем позицию видео. Свайп на всю ширину
+  /// экрана прокручивает видео от начала до конца, короткие движения —
+  /// пропорционально меньше. Работает и вперёд, и назад.
+  void _onSeekDragUpdate(DragUpdateDetails details, double areaWidth) {
+    final c = _controller;
+    final start = _dragStartPosition;
+    if (c == null || !_videoInitialized || start == null || areaWidth <= 0) {
+      return;
+    }
+    _dragTotalDx += details.delta.dx;
+    final duration = c.value.duration;
+    final dragRatio = (_dragTotalDx / areaWidth).clamp(-1.0, 1.0);
+    final offsetMs = (duration.inMilliseconds * dragRatio).round();
+    var target = start + Duration(milliseconds: offsetMs);
+    if (target < Duration.zero) target = Duration.zero;
+    if (target > duration) target = duration;
+    setState(() => _seekPreviewPosition = target);
+    c.seekTo(target);
+  }
+
+  /// Отпустили палец — убираем подсказку с временем и возобновляем
+  /// воспроизведение, если оно шло до начала свайпа.
+  void _onSeekDragEnd(DragEndDetails details) {
+    final c = _controller;
+    if (c == null) return;
+    setState(() => _seekPreviewPosition = null);
+    if (_wasPlayingBeforeDrag) c.play();
+    _dragStartPosition = null;
+  }
 
   // ------------------------------------------------------------------ build
 
@@ -182,8 +356,8 @@ class _CarDetailPageState extends State<CarDetailPage> {
                         SizedBox(height: 1.5.h),
                         _videoCard(car),
                         SizedBox(height: 1.2.h),
-                        // Небольшой контейнер «Смотреть в ленте» —
-                        // сразу после видео, как просили.
+                        // Отдельный блок «Смотреть в ленте» — единственный
+                        // путь в вертикальную ленту (VideoPage).
                         _lentaCard(),
                       ],
                       SizedBox(height: 1.5.h),
@@ -373,13 +547,15 @@ class _CarDetailPageState extends State<CarDetailPage> {
       padding: EdgeInsets.all(2.5.w),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(3.5.w),
-        child: _videoPoster(car),
+        child: _videoPlayerArea(car),
       ),
     );
   }
 
   /// Контейнер «Смотреть в ленте» — переключает таб на видео-ленту
   /// сразу на видео этого объявления, оставляя navbar на экране.
+  /// Это ЕДИНСТВЕННОЕ место на странице, которое уводит в VideoPage —
+  /// сам плеер выше (_videoPlayerArea) теперь никуда не переходит.
   Widget _lentaCard() {
     return GestureDetector(
       onTap: _openInLenta,
@@ -449,80 +625,295 @@ class _CarDetailPageState extends State<CarDetailPage> {
     );
   }
 
-  Widget _videoPoster(Car car) {
-    return GestureDetector(
-      // Переход в видеоленту, открытую на этом авто (с сохранённым navbar).
-      onTap: _openInLenta,
-      child: AspectRatio(
-        aspectRatio: 16 / 9,
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            car.photoPaths.isNotEmpty
-                ? _image(car.photoPaths.first)
-                : Container(color: const Color(0xFF111111)),
-            DecoratedBox(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [
-                    Colors.black.withOpacity(0.25),
-                    Colors.black.withOpacity(0.6),
-                  ],
-                ),
-              ),
-            ),
-            Center(
-              child: Container(
-                width: 8.h,
-                height: 8.h,
-                decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.95),
-                  shape: BoxShape.circle,
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.3),
-                      blurRadius: 16,
+  /// Область видео на странице деталей.
+  ///
+  /// ПОВЕДЕНИЕ:
+  ///  - до первого тапа: постер (первое фото) + кнопка play — точно как
+  ///    раньше визуально, в рамке 16:9 (точный формат видео ещё не известен).
+  ///  - тап → видео грузится и начинает играть ПРЯМО ЗДЕСЬ (инлайн),
+  ///    без перехода на другую страницу.
+  ///  - как только видео проинициализировано, контейнер меняет форму под
+  ///    РЕАЛЬНОЕ соотношение сторон ролика (controller.value.aspectRatio):
+  ///    вертикальное видео показывается вертикально, квадратное — квадратом,
+  ///    16:9 — как раньше. Больше никакой обрезки/растяжения под чужой
+  ///    формат (раньше был FittedBox+BoxFit.cover в фиксированной рамке
+  ///    16:9, который срезал края у не-широкоформатных роликов).
+  ///  - повторный тап по плееру — пауза/воспроизведение.
+  /// Переход в вертикальную ленту происходит ТОЛЬКО через _lentaCard.
+  Widget _videoPlayerArea(Car car) {
+    final aspectRatio = (_videoInitialized && _controller != null)
+        ? _controller!.value.aspectRatio
+        : 16 / 9;
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final areaWidth = constraints.maxWidth;
+        return GestureDetector(
+          onTap: _startInlineVideo,
+          // Держим палец — 2x скорость (как в TikTok/Reels), отпустили —
+          // обратно в обычный режим. Короткий тап по-прежнему play/pause.
+          onLongPressStart: (_) => _startFastForward(),
+          onLongPressEnd: (_) => _stopFastForward(),
+          onLongPressCancel: _stopFastForward,
+          // Свайп влево/вправо по видео — перемотка (как в TikTok/Reels).
+          onHorizontalDragStart: _videoInitialized ? _onSeekDragStart : null,
+          onHorizontalDragUpdate: _videoInitialized
+              ? (details) => _onSeekDragUpdate(details, areaWidth)
+              : null,
+          onHorizontalDragEnd: _videoInitialized ? _onSeekDragEnd : null,
+          child: AspectRatio(
+            aspectRatio: aspectRatio,
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                // Видео уже готово — показываем плеер в его настоящих
+                // пропорциях, без обрезки под чужой формат.
+                if (_videoInitialized && _controller != null)
+                  VideoPlayer(_controller!)
+                else
+                  // Постер (первое фото) пока видео не запущено/не загружено.
+                  car.photoPaths.isNotEmpty
+                      ? _image(car.photoPaths.first)
+                      : Container(color: const Color(0xFF111111)),
+
+                // Затемнение — только пока видео ещё не играет (постер-режим),
+                // чтобы не мешать смотреть само видео когда оно уже запущено.
+                if (!(_videoInitialized &&
+                    (_controller?.value.isPlaying ?? false)))
+                  DecoratedBox(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [
+                          Colors.black.withOpacity(0.25),
+                          Colors.black.withOpacity(0.6),
+                        ],
+                      ),
                     ),
-                  ],
-                ),
-                child: Icon(Icons.play_arrow_rounded,
-                    color: _accent, size: 4.5.h),
-              ),
-            ),
-            Positioned(
-              left: 3.5.w,
-              bottom: 1.4.h,
-              right: 3.5.w,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Смотреть видеообзор',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 14.sp,
-                      fontWeight: FontWeight.w800,
-                      shadows: const [
-                        Shadow(color: Colors.black54, blurRadius: 8)
+                  ),
+
+                // Спиннер во время загрузки видео.
+                if (_videoInitializing)
+                  const Center(
+                    child: CircularProgressIndicator(
+                        color: Colors.white, strokeWidth: 2.4),
+                  ),
+
+                // Кнопка play/pause по центру — скрыта пока видео играет,
+                // видна на постере и на паузе (как обычный видео-плеер).
+                if (!_videoInitializing &&
+                    !(_videoInitialized &&
+                        (_controller?.value.isPlaying ?? false)))
+                  Center(
+                    child: Container(
+                      width: 8.h,
+                      height: 8.h,
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.95),
+                        shape: BoxShape.circle,
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.3),
+                            blurRadius: 16,
+                          ),
+                        ],
+                      ),
+                      child: Icon(Icons.play_arrow_rounded,
+                          color: _accent, size: 4.5.h),
+                    ),
+                  ),
+
+                // Кнопка звука — видна, когда видео уже загружено.
+                if (_videoInitialized && _controller != null)
+                  Positioned(
+                    top: 1.2.h,
+                    right: 3.w,
+                    child: GestureDetector(
+                      onTap: _toggleMute,
+                      behavior: HitTestBehavior.opaque,
+                      child: Container(
+                        width: 4.h,
+                        height: 4.h,
+                        decoration: BoxDecoration(
+                          color: Colors.black.withOpacity(0.45),
+                          shape: BoxShape.circle,
+                        ),
+                        child: Icon(
+                          _isMuted
+                              ? Icons.volume_off_rounded
+                              : Icons.volume_up_rounded,
+                          color: Colors.white,
+                          size: 2.h,
+                        ),
+                      ),
+                    ),
+                  ),
+
+                // Значок "2x" — показывается пока палец зажат на видео.
+                if (_isFastForwarding)
+                  Positioned(
+                    top: 1.2.h,
+                    left: 3.w,
+                    child: Container(
+                      padding: EdgeInsets.symmetric(
+                          horizontal: 2.5.w, vertical: 0.6.h),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withOpacity(0.55),
+                        borderRadius: BorderRadius.circular(2.h),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.fast_forward_rounded,
+                              color: Colors.white, size: 1.8.h),
+                          SizedBox(width: 0.8.w),
+                          Text(
+                            '2x',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w800,
+                              fontSize: 11.sp,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+
+                // Подсказка при свайпе — показывает, на какое время
+                // перематываем прямо сейчас, и в какую сторону.
+                if (_seekPreviewPosition != null && _dragStartPosition != null)
+                  Center(
+                    child: Container(
+                      padding: EdgeInsets.symmetric(
+                          horizontal: 3.5.w, vertical: 1.h),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withOpacity(0.6),
+                        borderRadius: BorderRadius.circular(2.h),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            _seekPreviewPosition! >= _dragStartPosition!
+                                ? Icons.fast_forward_rounded
+                                : Icons.fast_rewind_rounded,
+                            color: Colors.white,
+                            size: 2.2.h,
+                          ),
+                          SizedBox(width: 1.5.w),
+                          Text(
+                            _formatDuration(_seekPreviewPosition!),
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w800,
+                              fontSize: 13.sp,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+
+                // Полоса прогресса + текущее время / общая длительность
+                // видео. AnimatedBuilder слушает сам контроллер, чтобы
+                // тикать плавно, не перестраивая весь виджет через setState.
+                if (_videoInitialized && _controller != null)
+                  Positioned(
+                    left: 3.w,
+                    right: 3.w,
+                    bottom: 1.h,
+                    child: AnimatedBuilder(
+                      animation: _controller!,
+                      builder: (context, _) {
+                        final position = _controller!.value.position;
+                        final duration = _controller!.value.duration;
+                        final progress = duration.inMilliseconds > 0
+                            ? position.inMilliseconds /
+                                duration.inMilliseconds
+                            : 0.0;
+                        return Row(
+                          children: [
+                            Text(
+                              _formatDuration(position),
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 9.5.sp,
+                                fontWeight: FontWeight.w600,
+                                shadows: const [
+                                  Shadow(color: Colors.black54, blurRadius: 4)
+                                ],
+                              ),
+                            ),
+                            SizedBox(width: 2.w),
+                            Expanded(
+                              child: ClipRRect(
+                                borderRadius: BorderRadius.circular(2),
+                                child: LinearProgressIndicator(
+                                  value: progress.clamp(0.0, 1.0),
+                                  minHeight: 3,
+                                  backgroundColor:
+                                      Colors.white.withOpacity(0.3),
+                                  valueColor: const AlwaysStoppedAnimation(
+                                      Colors.white),
+                                ),
+                              ),
+                            ),
+                            SizedBox(width: 2.w),
+                            Text(
+                              _formatDuration(duration),
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 9.5.sp,
+                                fontWeight: FontWeight.w600,
+                                shadows: const [
+                                  Shadow(color: Colors.black54, blurRadius: 4)
+                                ],
+                              ),
+                            ),
+                          ],
+                        );
+                      },
+                    ),
+                  ),
+
+                // Подпись — только до первого тапа (постер-режим), как раньше.
+                if (!_videoStarted)
+                  Positioned(
+                    left: 3.5.w,
+                    bottom: 1.4.h,
+                    right: 3.5.w,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Смотреть видеообзор',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 14.sp,
+                            fontWeight: FontWeight.w800,
+                            shadows: const [
+                              Shadow(color: Colors.black54, blurRadius: 8)
+                            ],
+                          ),
+                        ),
+                        SizedBox(height: 0.3.h),
+                        Text(
+                          'Видео от продавца этого авто',
+                          style: TextStyle(
+                            color: Colors.white.withOpacity(0.85),
+                            fontSize: 11.5.sp,
+                          ),
+                        ),
                       ],
                     ),
                   ),
-                  SizedBox(height: 0.3.h),
-                  Text(
-                    'Видео от продавца этого авто',
-                    style: TextStyle(
-                      color: Colors.white.withOpacity(0.85),
-                      fontSize: 11.5.sp,
-                    ),
-                  ),
-                ],
-              ),
+              ],
             ),
-          ],
-        ),
-      ),
+          ),
+        );
+      },
     );
   }
 

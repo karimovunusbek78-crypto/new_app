@@ -77,6 +77,11 @@ class _CarPublishPageState extends State<CarPublishPage>
   // Firestore document is being written — blocks the submit button.
   bool _isUploading = false;
 
+  // Live text shown under the spinner while uploading, e.g. "Фото 2/4…" —
+  // gives the user real feedback instead of a silent spinner, and doubles
+  // as a debug signal for exactly where things are.
+  String _uploadStatus = '';
+
   // Accent color — publish actions are black, matching the autoslon flow.
   static const _accent = Color(0xFF111111);
 
@@ -252,6 +257,49 @@ class _CarPublishPageState extends State<CarPublishPage>
         ),
       );
 
+  // Uploads one file with a hard timeout and live progress logging, so a
+  // stalled/denied upload fails loudly after [timeout] instead of spinning
+  // forever. Returns the download URL.
+  Future<String> _uploadWithTimeout({
+    required Reference ref,
+    required File file,
+    required String contentType,
+    required String label,
+    required Duration timeout,
+  }) async {
+    final sizeBytes = await file.length();
+    debugPrint('▶ $label: starting upload, size=$sizeBytes bytes, path=${ref.fullPath}');
+
+    final task = ref.putFile(file, SettableMetadata(contentType: contentType));
+
+    final sub = task.snapshotEvents.listen((s) {
+      final pct = s.totalBytes > 0
+          ? (s.bytesTransferred / s.totalBytes * 100).toStringAsFixed(0)
+          : '?';
+      debugPrint('  $label: ${s.state.name} $pct% (${s.bytesTransferred}/${s.totalBytes})');
+      if (mounted) {
+        setState(() => _uploadStatus = '$label: $pct%');
+      }
+    });
+
+    try {
+      await task.timeout(
+        timeout,
+        onTimeout: () {
+          task.cancel();
+          throw Exception(
+              '$label: загрузка не завершилась за ${timeout.inMinutes} мин. '
+              'Проверьте интернет-соединение и попробуйте снова.');
+        },
+      );
+    } finally {
+      await sub.cancel();
+    }
+
+    debugPrint('✔ $label: upload complete');
+    return ref.getDownloadURL();
+  }
+
   Future<void> _submit() async {
     if (_isUploading) return;
 
@@ -299,27 +347,53 @@ class _CarPublishPageState extends State<CarPublishPage>
 
     final carId = DateTime.now().millisecondsSinceEpoch.toString();
 
-    setState(() => _isUploading = true);
+    setState(() {
+      _isUploading = true;
+      _uploadStatus = 'Подготовка…';
+    });
 
     try {
       final storage = FirebaseStorage.instance;
+      debugPrint('▶ publish start, bucket=${storage.bucket}, carId=$carId');
 
       // ── Загрузка фото в Storage ─────────────────────────────
       final photoUrls = <String>[];
       for (int i = 0; i < _photos.length; i++) {
+        if (mounted) {
+          setState(() => _uploadStatus = 'Фото ${i + 1}/${_photos.length}…');
+        }
         final file = File(_photos[i].path);
         final ref = storage.ref('cars/${user.uid}/$carId/photo_$i.jpg');
-        await ref.putFile(file, SettableMetadata(contentType: 'image/jpeg'));
-        photoUrls.add(await ref.getDownloadURL());
+        final url = await _uploadWithTimeout(
+          ref: ref,
+          file: file,
+          contentType: 'image/jpeg',
+          label: 'Фото ${i + 1}',
+          timeout: const Duration(minutes: 2),
+        );
+        photoUrls.add(url);
       }
 
       // ── Загрузка видео в Storage (если есть) ─────────────────
       String? videoUrl;
       if (_video != null) {
+        if (mounted) {
+          setState(() => _uploadStatus = 'Загрузка видео…');
+        }
         final file = File(_video!.path);
         final ref = storage.ref('cars/${user.uid}/$carId/video.mp4');
-        await ref.putFile(file, SettableMetadata(contentType: 'video/mp4'));
-        videoUrl = await ref.getDownloadURL();
+        videoUrl = await _uploadWithTimeout(
+          ref: ref,
+          file: file,
+          contentType: 'video/mp4',
+          label: 'Видео',
+          // Video is bigger — give it more time before we give up.
+          timeout: const Duration(minutes: 6),
+        );
+      }
+
+      if (mounted) {
+        setState(() => _uploadStatus = 'Публикация объявления…');
       }
 
       final car = Car(
@@ -349,8 +423,16 @@ class _CarPublishPageState extends State<CarPublishPage>
       );
 
       // Пишет документ в Firestore; список на Home/Video обновится сам
-      // через живую подписку CarsProvider.
-      await carsProvider.publishCar(car);
+      // через живую подписку CarsProvider. Guarded by its own timeout too —
+      // a permission-denied write can otherwise hang the UI just like a
+      // stalled Storage upload would.
+      debugPrint('▶ writing Firestore doc…');
+      await carsProvider.publishCar(car).timeout(
+        const Duration(seconds: 30),
+        onTimeout: () => throw Exception(
+            'Не удалось сохранить объявление (тайм-аут). Попробуйте снова.'),
+      );
+      debugPrint('✔ Firestore doc written');
 
       // Consume the one-time permission, then return the new car. After this
       // the user must request permission again for the next listing.
@@ -359,13 +441,19 @@ class _CarPublishPageState extends State<CarPublishPage>
 
       Navigator.pop(context, car);
     } catch (e) {
+      debugPrint('✖ publish error: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Ошибка публикации: $e')),
         );
       }
     } finally {
-      if (mounted) setState(() => _isUploading = false);
+      if (mounted) {
+        setState(() {
+          _isUploading = false;
+          _uploadStatus = '';
+        });
+      }
     }
   }
 
@@ -1171,11 +1259,28 @@ class _CarPublishPageState extends State<CarPublishPage>
         ),
         alignment: Alignment.center,
         child: _isUploading
-            ? SizedBox(
-                width: 2.5.h,
-                height: 2.5.h,
-                child: const CircularProgressIndicator(
-                    color: Colors.white, strokeWidth: 2),
+            ? Row(
+                mainAxisSize: MainAxisSize.min,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  SizedBox(
+                    width: 2.2.h,
+                    height: 2.2.h,
+                    child: const CircularProgressIndicator(
+                        color: Colors.white, strokeWidth: 2),
+                  ),
+                  if (_uploadStatus.isNotEmpty) ...[
+                    SizedBox(width: 2.5.w),
+                    Text(
+                      _uploadStatus,
+                      style: TextStyle(
+                        fontSize: 12.5.sp,
+                        fontWeight: FontWeight.w700,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ],
+                ],
               )
             : Text(
                 'Опубликовать объявление',

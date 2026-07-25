@@ -4,8 +4,10 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:new_app/src/pages/pages.dart';
 import 'package:new_app/src/pages/profile/service/profile_history_service.dart';
 import 'package:new_app/src/pages/favorite/favorite_page.dart';
+import 'package:new_app/src/pages/saved/page/saved_page.dart';
 import 'package:new_app/src/pages/settings/settings_page.dart';
 import 'package:responsive_sizer/responsive_sizer.dart';
 
@@ -687,16 +689,29 @@ class _ProfilePageState extends State<ProfilePage> {
 
             SizedBox(height: 3.5.h),
 
-            // ── Меню (Избранное / Активность / Настройки) ──────────────────────
+            // ── Меню (Понравившееся / Избранное / Активность / Настройки) ─────
             const _SectionLabel(label: 'Меню'),
             SizedBox(height: 1.2.h),
 
+            // "Понравившееся" (сердечко) — FavoritesProvider,
+            // users/{uid}/favorites. Не менялось, только текст на русском.
             _MenuTile(
               icon: Icons.favorite_border_rounded,
-              label: 'Избранное',
+              label: 'Понравившееся',
               onTap: () => Navigator.push(
                 context,
                 MaterialPageRoute(builder: (_) => const FavoritePage()),
+              ),
+            ),
+            SizedBox(height: 1.2.h),
+            // "Избранное" — закладка из VideoPage, SavedCarsProvider,
+            // users/{uid}/savedCars.
+            _MenuTile(
+              icon: Icons.bookmark_border_rounded,
+              label: 'Избранное',
+              onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const SavedPage()),
               ),
             ),
             SizedBox(height: 1.2.h),
@@ -857,7 +872,7 @@ class _SectionLabel extends StatelessWidget {
   }
 }
 
-// ── Menu tile (Избранное / Активность / Настройки) ──────────────────────────
+// ── Menu tile (Понравившееся / Избранное / Активность / Настройки) ──────────
 
 class _MenuTile extends StatelessWidget {
   final IconData icon;

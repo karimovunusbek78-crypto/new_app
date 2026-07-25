@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:responsive_sizer/responsive_sizer.dart';
 
@@ -58,16 +59,31 @@ class _CarPhotoCarouselState extends State<CarPhotoCarousel> {
         child: Stack(
           alignment: Alignment.bottomCenter,
           children: [
-            PageView.builder(
-              controller: _controller,
-              itemCount: photos.length,
-              onPageChanged: (i) => setState(() => _index = i),
-              itemBuilder: (_, i) {
-                final path = photos[i];
-                final isNetwork = path.startsWith('http');
-                return isNetwork
-                    ? Image.network(path, fit: BoxFit.cover, width: double.infinity)
-                    : Image.file(File(path), fit: BoxFit.cover, width: double.infinity);
+            LayoutBuilder(
+              builder: (context, constraints) {
+                // ФИКС: реальные пиксели экрана под размер карточки —
+                // декодируем/кешируем фото ИМЕННО под этот размер, а не
+                // в полном разрешении камеры (4000x3000 и т.п.). Раньше
+                // каждая фотка декодировалась в оригинальном размере
+                // при каждой перестройке виджета — это и было причиной
+                // "грузит долго / не плавно" при скролле списков.
+                final dpr = MediaQuery.of(context).devicePixelRatio;
+                final cacheW = (constraints.maxWidth * dpr).round();
+                final cacheH = (widget.height.h * dpr).round();
+
+                return PageView.builder(
+                  controller: _controller,
+                  itemCount: photos.length,
+                  onPageChanged: (i) => setState(() => _index = i),
+                  itemBuilder: (_, i) {
+                    final path = photos[i];
+                    return _CarouselImage(
+                      path: path,
+                      cacheWidth: cacheW,
+                      cacheHeight: cacheH,
+                    );
+                  },
+                );
               },
             ),
             if (photos.length > 1)
@@ -92,6 +108,68 @@ class _CarPhotoCarouselState extends State<CarPhotoCarousel> {
               ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// Отдельный виджет для одного фото — с ключом по [path], чтобы Flutter
+/// переиспользовал уже созданный элемент (и его декодированное изображение
+/// в памяти) вместо пересоздания с нуля при каждой перестройке PageView.
+class _CarouselImage extends StatelessWidget {
+  final String path;
+  final int cacheWidth;
+  final int cacheHeight;
+
+  const _CarouselImage({
+    required this.path,
+    required this.cacheWidth,
+    required this.cacheHeight,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final isNetwork = path.startsWith('http');
+
+    if (isNetwork) {
+      // CachedNetworkImage: качает файл ОДИН раз и кладёт на диск —
+      // при следующем показе (даже после перезапуска приложения) грузится
+      // мгновенно из локального кеша, без повторного запроса в сеть.
+      // memCacheWidth/Height — ещё и держит в памяти уже уменьшенную
+      // версию, а не оригинал в полный размер.
+      return CachedNetworkImage(
+        key: ValueKey(path),
+        imageUrl: path,
+        fit: BoxFit.cover,
+        width: double.infinity,
+        memCacheWidth: cacheWidth > 0 ? cacheWidth : null,
+        memCacheHeight: cacheHeight > 0 ? cacheHeight : null,
+        fadeInDuration: const Duration(milliseconds: 150),
+        fadeOutDuration: const Duration(milliseconds: 100),
+        placeholder: (_, __) => Container(color: const Color(0xFFE5E5EA)),
+        errorWidget: (_, __, ___) => Container(
+          color: const Color(0xFFE5E5EA),
+          child: const Icon(Icons.directions_car_rounded,
+              color: Color(0xFFC7C7CC)),
+        ),
+      );
+    }
+
+    // Локальный файл: cacheWidth/cacheHeight заставляют Flutter декодировать
+    // сразу в уменьшенном размере (а не в оригинальном разрешении камеры),
+    // gaplessPlayback убирает "мигание" пустым местом при смене кадра.
+    return Image.file(
+      File(path),
+      key: ValueKey(path),
+      fit: BoxFit.cover,
+      width: double.infinity,
+      gaplessPlayback: true,
+      cacheWidth: cacheWidth > 0 ? cacheWidth : null,
+      cacheHeight: cacheHeight > 0 ? cacheHeight : null,
+      errorBuilder: (_, __, ___) => Container(
+        color: const Color(0xFFE5E5EA),
+        child: const Icon(Icons.directions_car_rounded,
+            color: Color(0xFFC7C7CC)),
       ),
     );
   }

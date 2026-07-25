@@ -10,13 +10,15 @@ import 'package:new_app/src/pages/home/providers/cars_provider.dart';
 ///
 /// Показывает:
 ///  • карточку авто + дату публикации;
-///  • живые счётчики: лайки, просмотры, за сегодня, комментарии;
+///  • живые счётчики: лайки, сохранения, просмотры, за сегодня, комментарии;
 ///  • вкладку «Лайкнули» — кто поставил лайк (аватар, имя, когда);
-///  • вкладку «Смотрели» — кто посмотрел видео (аватар, имя, когда).
+///  • вкладку «Смотрели» — кто посмотрел видео (аватар, имя, когда);
+///  • вкладку «Сохранили» — кто добавил авто в «Избранное» (закладка).
 ///
 /// Схема данных (по правилам Firestore проекта):
 ///  • лайки:      cars/{carId}/likedBy/{uid}   — id документа = uid лайкнувшего
 ///  • просмотры:  cars/{carId}/viewLog/{logId} — авто-id, uid лежит в поле 'uid'
+///  • сохранения: cars/{carId}/savedBy/{uid}   — id документа = uid сохранившего
 /// У одного пользователя может быть много записей в viewLog (по записи
 /// на просмотр) — в списке «Смотрели» он показывается ОДИН раз,
 /// с самым свежим временем просмотра.
@@ -61,7 +63,7 @@ class _VideoAnalyticsPageState extends State<VideoAnalyticsPage> {
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
-      length: 2,
+      length: 3,
       child: Scaffold(
         backgroundColor: const Color(0xFFF5F5F7),
         body: SafeArea(
@@ -107,6 +109,7 @@ class _VideoAnalyticsPageState extends State<VideoAnalyticsPage> {
                       (data?['likesCount'] as int?) ?? widget.car.likesCount;
                   final views =
                       (data?['viewsCount'] as int?) ?? widget.car.viewsCount;
+                  final saves = (data?['savesCount'] as int?) ?? 0;
                   final published = _extractTs(data);
 
                   return Padding(
@@ -127,12 +130,24 @@ class _VideoAnalyticsPageState extends State<VideoAnalyticsPage> {
                             SizedBox(width: 2.5.w),
                             Expanded(
                               child: _StatCard(
+                                icon: Icons.bookmark_rounded,
+                                value: '$saves',
+                                label: 'Сохранения',
+                              ),
+                            ),
+                            SizedBox(width: 2.5.w),
+                            Expanded(
+                              child: _StatCard(
                                 icon: Icons.remove_red_eye_outlined,
                                 value: '$views',
                                 label: 'Просмотры',
                               ),
                             ),
-                            SizedBox(width: 2.5.w),
+                          ],
+                        ),
+                        SizedBox(height: 1.5.h),
+                        Row(
+                          children: [
                             Expanded(child: _todayCard()),
                             SizedBox(width: 2.5.w),
                             Expanded(child: _commentsCard()),
@@ -146,7 +161,7 @@ class _VideoAnalyticsPageState extends State<VideoAnalyticsPage> {
 
               SizedBox(height: 1.5.h),
 
-              // ── Вкладки: кто лайкнул / кто смотрел ───────────────────
+              // ── Вкладки: кто лайкнул / кто смотрел / кто сохранил ────
               TabBar(
                 labelColor: _accent,
                 unselectedLabelColor: _grey,
@@ -157,6 +172,7 @@ class _VideoAnalyticsPageState extends State<VideoAnalyticsPage> {
                 tabs: const [
                   Tab(text: 'Лайкнули'),
                   Tab(text: 'Смотрели'),
+                  Tab(text: 'Сохранили'),
                 ],
               ),
               Expanded(
@@ -176,6 +192,14 @@ class _VideoAnalyticsPageState extends State<VideoAnalyticsPage> {
                       dedupe: true,
                       emptyIcon: Icons.visibility_off_outlined,
                       emptyText: 'Пока нет просмотров',
+                    ),
+                    // Сохранения: id документа = uid сохранившего
+                    // (cars/{carId}/savedBy/{uid}).
+                    _peopleList(
+                      collection: 'savedBy',
+                      dedupe: false,
+                      emptyIcon: Icons.bookmark_border_rounded,
+                      emptyText: 'Пока никто не сохранил',
                     ),
                   ],
                 ),
@@ -279,7 +303,7 @@ class _VideoAnalyticsPageState extends State<VideoAnalyticsPage> {
     );
   }
 
-  // ── Список людей из подколлекции (likedBy / viewLog) ─────────────────
+  // ── Список людей из подколлекции (likedBy / viewLog / savedBy) ───────
   Widget _peopleList({
     required String collection,
     required bool dedupe,
@@ -303,7 +327,7 @@ class _VideoAnalyticsPageState extends State<VideoAnalyticsPage> {
         var entries = docs.map((d) {
           final data = d.data();
           final fieldUid = ((data['uid'] as String?) ?? '').trim();
-          // likedBy: uid = id документа; viewLog: uid = поле 'uid'.
+          // likedBy/savedBy: uid = id документа; viewLog: uid = поле 'uid'.
           final uid = fieldUid.isNotEmpty ? fieldUid : d.id;
           return _PersonEntry(uid: uid, time: _extractTs(data));
         }).toList();
@@ -364,7 +388,13 @@ class _VideoAnalyticsPageState extends State<VideoAnalyticsPage> {
   // ── Достаём Timestamp из разных возможных полей ──────────────────────
   static DateTime? _extractTs(Map<String, dynamic>? data) {
     if (data == null) return null;
-    for (final key in ['createdAt', 'timestamp', 'date', 'publishedAt']) {
+    for (final key in [
+      'createdAt',
+      'timestamp',
+      'date',
+      'publishedAt',
+      'savedAt'
+    ]) {
       final v = data[key];
       if (v is Timestamp) return v.toDate();
     }

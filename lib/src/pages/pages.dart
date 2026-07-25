@@ -31,3 +31,6 @@ export 'home/widgets/car_photo_caursel.dart';
 export 'home/widgets/home_car_card.dart';
 export 'home/providers/cars_provider.dart';
 export 'home/pages/car_detail_page.dart';
+export 'saved/page/saved_car_card.dart';
+export 'saved/provider/saved_cars_provider.dart';
+export 'saved/page/saved_page.dart';
