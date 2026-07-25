@@ -10,15 +10,29 @@ import 'package:new_app/src/pages/home/providers/cars_provider.dart';
 import 'package:new_app/src/pages/home/providers/subscribtion_provider.dart';
 
 /// Публичная страница профиля/статистики продавца — в стиле канала YouTube.
-/// Открывается при тапе на аватар/имя автора в видео-ленте.
+/// Открывается при тапе на аватар/имя автора в видео-ленте, а также
+/// теперь используется как «Моя статистика» — при переходе со своим
+/// собственным uid (кнопка «Статистика»/карточки на HomePage), заменив
+/// отдельную MyStatsPage.
 ///
 /// Показывает:
 ///  • баннер + аватар + имя автора (живой стрим из users/{uid});
 ///  • подписчиков / всего просмотров / кол-во публикаций одной строкой;
 ///  • кнопку «Подписаться» в стиле YouTube, если это чужой профиль;
+///  • для СВОЕГО профиля — вместо кнопки подписки показывается пилюля-
+///    бейдж «Мой профиль публикаций», просто обозначающая, что это
+///    ваша собственная страница (без счётчика лайков, как было раньше);
 ///  • сетку публикаций с аналитикой (лайки, просмотры, за сегодня).
 ///
-/// Работает и для своего uid (тогда кнопки подписки нет).
+/// ФИКСЫ:
+///  • Стрелка «назад» раньше жила ВНУТРИ _ChannelHeader (SliverToBoxAdapter)
+///    и поэтому уезжала вверх вместе с контентом при скролле. Теперь она
+///    вынесена в отдельный Positioned поверх CustomScrollView — не зависит
+///    от скролла, всегда на экране.
+///  • Список раньше использовал BouncingScrollPhysics — это давало эффект
+///    "оттягивания" контента вниз, когда уже находишься в самом верху.
+///    Заменено на ClampingScrollPhysics — скролл жёстко останавливается
+///    на границах, без пружинного оттягивания.
 class UserStatsPage extends StatelessWidget {
   final String uid;
   const UserStatsPage({super.key, required this.uid});
@@ -39,79 +53,121 @@ class UserStatsPage extends StatelessWidget {
 
     return Scaffold(
       backgroundColor: _bg,
-      body: StreamBuilder<DocumentSnapshot>(
-        stream:
-            FirebaseFirestore.instance.collection('users').doc(uid).snapshots(),
-        builder: (context, snap) {
-          final data = snap.data?.data() as Map<String, dynamic>?;
-          final name = ((data?['name'] as String?) ?? '').trim();
-          final avatarUrl = ((data?['avatarUrl'] as String?) ?? '').trim();
-          final subscribers = (data?['subscribersCount'] ?? 0) as num;
+      body: Stack(
+        children: [
+          StreamBuilder<DocumentSnapshot>(
+            stream: FirebaseFirestore.instance
+                .collection('users')
+                .doc(uid)
+                .snapshots(),
+            builder: (context, snap) {
+              final data = snap.data?.data() as Map<String, dynamic>?;
+              final name = ((data?['name'] as String?) ?? '').trim();
+              final avatarUrl = ((data?['avatarUrl'] as String?) ?? '').trim();
+              final subscribers = (data?['subscribersCount'] ?? 0) as num;
 
-          return CustomScrollView(
-            physics: const BouncingScrollPhysics(
-                parent: AlwaysScrollableScrollPhysics()),
-            slivers: [
-              SliverToBoxAdapter(
-                child: _ChannelHeader(
-                  name: name.isNotEmpty ? name : 'Автор',
-                  avatarUrl: avatarUrl,
-                  subscribers: subscribers.toInt(),
-                  publications: cars.length,
-                  totalLikes: totalLikes,
-                  totalViews: totalViews,
-                  showSubscribe: !isMe,
-                  isMe: isMe,
-                  uid: uid,
-                ),
-              ),
-              SliverPersistentHeader(
-                pinned: true,
-                delegate: _SectionHeaderDelegate(count: cars.length),
-              ),
-              if (cars.isEmpty)
-                SliverToBoxAdapter(
-                  child: Padding(
-                    padding: EdgeInsets.only(top: 6.h, bottom: 6.h),
-                    child: Column(
-                      children: [
-                        Icon(Icons.video_library_outlined,
-                            size: 5.h, color: const Color(0xFFC8C8CC)),
-                        SizedBox(height: 1.5.h),
-                        Text(
-                          'Пока нет объявлений',
-                          style: TextStyle(fontSize: 12.5.sp, color: _grey),
+              return CustomScrollView(
+                // ClampingScrollPhysics: без пружинного оттягивания вниз,
+                // когда уже находишься в самом верху списка (был bounce
+                // из-за BouncingScrollPhysics — типичный iOS-эффект, но
+                // здесь он не нужен).
+                physics: const ClampingScrollPhysics(
+                    parent: AlwaysScrollableScrollPhysics()),
+                slivers: [
+                  SliverToBoxAdapter(
+                    child: _ChannelHeader(
+                      name: name.isNotEmpty ? name : 'Автор',
+                      avatarUrl: avatarUrl,
+                      subscribers: subscribers.toInt(),
+                      publications: cars.length,
+                      totalLikes: totalLikes,
+                      totalViews: totalViews,
+                      showSubscribe: !isMe,
+                      isMe: isMe,
+                      uid: uid,
+                    ),
+                  ),
+                  SliverPersistentHeader(
+                    pinned: true,
+                    delegate: _SectionHeaderDelegate(count: cars.length),
+                  ),
+                  if (cars.isEmpty)
+                    SliverToBoxAdapter(
+                      child: Padding(
+                        padding: EdgeInsets.only(top: 6.h, bottom: 6.h),
+                        child: Column(
+                          children: [
+                            Icon(Icons.video_library_outlined,
+                                size: 5.h, color: const Color(0xFFC8C8CC)),
+                            SizedBox(height: 1.5.h),
+                            Text(
+                              'Пока нет объявлений',
+                              style:
+                                  TextStyle(fontSize: 12.5.sp, color: _grey),
+                            ),
+                          ],
                         ),
-                      ],
+                      ),
+                    )
+                  else
+                    SliverPadding(
+                      padding: EdgeInsets.fromLTRB(4.w, 1.5.h, 4.w, 0),
+                      sliver: SliverGrid(
+                        gridDelegate:
+                            SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: 2,
+                          crossAxisSpacing: 3.w,
+                          mainAxisSpacing: 2.5.h,
+                          // Высота карточки не зависит от текста — картинка
+                          // сама сжимается (Expanded), поэтому переполнение
+                          // снизу больше не может произойти при любом
+                          // соотношении сторон экрана.
+                          childAspectRatio: 0.66,
+                        ),
+                        delegate: SliverChildBuilderDelegate(
+                          (context, i) => _VideoCard(car: cars[i]),
+                          childCount: cars.length,
+                        ),
+                      ),
                     ),
+                  SliverToBoxAdapter(
+                    child: SizedBox(height: 2.h + bottomSafe),
                   ),
-                )
-              else
-                SliverPadding(
-                  padding: EdgeInsets.fromLTRB(4.w, 1.5.h, 4.w, 0),
-                  sliver: SliverGrid(
-                    gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: 2,
-                      crossAxisSpacing: 3.w,
-                      mainAxisSpacing: 2.5.h,
-                      // Высота карточки не зависит от текста — картинка
-                      // сама сжимается (Expanded), поэтому переполнение
-                      // снизу больше не может произойти при любом
-                      // соотношении сторон экрана.
-                      childAspectRatio: 0.66,
-                    ),
-                    delegate: SliverChildBuilderDelegate(
-                      (context, i) => _VideoCard(car: cars[i]),
-                      childCount: cars.length,
+                ],
+              );
+            },
+          ),
+
+          // Стрелка «назад» — фиксированный оверлей поверх скролла, не
+          // является частью контента и поэтому никогда не уезжает вверх.
+          Positioned(
+            top: 0,
+            left: 3.w,
+            right: 3.w,
+            child: SafeArea(
+              bottom: false,
+              child: SizedBox(
+                height: 6.h,
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: GestureDetector(
+                    onTap: () => Navigator.maybePop(context),
+                    behavior: HitTestBehavior.opaque,
+                    child: Container(
+                      padding: EdgeInsets.all(1.6.w),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withOpacity(0.35),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(Icons.arrow_back,
+                          color: Colors.white, size: 20),
                     ),
                   ),
                 ),
-              SliverToBoxAdapter(
-                child: SizedBox(height: 2.h + bottomSafe),
               ),
-            ],
-          );
-        },
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -179,6 +235,9 @@ class _SectionHeaderDelegate extends SliverPersistentHeaderDelegate {
 }
 
 // ── Шапка канала: баннер, аватар, имя, статистика, подписка ───────────
+// ВАЖНО: стрелка «назад» здесь больше НЕ рисуется — она вынесена в
+// отдельный Positioned-оверлей в UserStatsPage.build, чтобы не скроллилась
+// вместе с баннером.
 class _ChannelHeader extends StatelessWidget {
   final String name;
   final String avatarUrl;
@@ -239,33 +298,6 @@ class _ChannelHeader extends StatelessWidget {
                           center: const Alignment(0.8, -0.6),
                           radius: 1.3,
                           colors: [Colors.white, Colors.transparent],
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-              Positioned(
-                top: 0,
-                left: 3.w,
-                right: 3.w,
-                child: SafeArea(
-                  bottom: false,
-                  child: SizedBox(
-                    height: 6.h,
-                    child: Align(
-                      alignment: Alignment.centerLeft,
-                      child: GestureDetector(
-                        onTap: () => Navigator.maybePop(context),
-                        behavior: HitTestBehavior.opaque,
-                        child: Container(
-                          padding: EdgeInsets.all(1.6.w),
-                          decoration: BoxDecoration(
-                            color: Colors.black.withOpacity(0.35),
-                            shape: BoxShape.circle,
-                          ),
-                          child: const Icon(Icons.arrow_back,
-                              color: Colors.white, size: 20),
                         ),
                       ),
                     ),
@@ -356,25 +388,14 @@ class _ChannelHeader extends StatelessWidget {
           ),
         ),
         SizedBox(height: 1.8.h),
+        // Чужой профиль → обычная кнопка «Подписаться» (YouTube-style).
+        // Свой профиль → вместо кнопки подписки/счётчика лайков теперь
+        // просто пилюля-бейдж, обозначающая, что это ваша собственная
+        // страница публикаций (замена прежней MyStatsPage-шапки).
         if (showSubscribe)
           _SubscribeButton(uid: uid)
         else if (isMe)
-          Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(Icons.favorite_rounded,
-                  size: 16, color: Color(0xFFFF3B30)),
-              SizedBox(width: 1.5.w),
-              Text(
-                '$totalLikes лайков всего',
-                style: TextStyle(
-                  fontSize: 10.5.sp,
-                  color: _grey,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ],
-          ),
+          const _MyProfileBadge(),
         SizedBox(height: 1.6.h),
         const Divider(height: 1, thickness: 1, color: Color(0xFFECECEE)),
       ],
@@ -385,6 +406,42 @@ class _ChannelHeader extends StatelessWidget {
     if (n >= 1000000) return '${(n / 1000000).toStringAsFixed(1)}M';
     if (n >= 1000) return '${(n / 1000).toStringAsFixed(1)}K';
     return '$n';
+  }
+}
+
+// ── Бейдж «Мой профиль публикаций» — заменяет счётчик лайков на
+// собственном профиле. Не кликабельный, чисто информационный, в том же
+// пилюльном стиле, что и кнопка подписки, но нейтрального серого цвета.
+class _MyProfileBadge extends StatelessWidget {
+  const _MyProfileBadge();
+
+  static const _ink = Color(0xFF0F0F0F);
+  static const _hair = Color(0xFFECECEE);
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: EdgeInsets.symmetric(horizontal: 5.w, vertical: 1.1.h),
+      decoration: BoxDecoration(
+        color: _hair,
+        borderRadius: BorderRadius.circular(8.w),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.person_pin_circle_outlined, size: 2.h, color: _ink),
+          SizedBox(width: 1.5.w),
+          Text(
+            'Мой профиль публикаций',
+            style: TextStyle(
+              fontSize: 11.5.sp,
+              fontWeight: FontWeight.w700,
+              color: _ink,
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
 

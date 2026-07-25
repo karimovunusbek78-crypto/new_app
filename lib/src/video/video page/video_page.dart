@@ -7,6 +7,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:new_app/src/pages/home/providers/subscribtion_provider.dart';
 import 'package:new_app/src/pages/pages.dart';
+import 'package:new_app/src/pages/saved/provider/saved_cars_provider.dart';
 import 'package:new_app/src/video/controller/main_tab_controller.dart';
 import 'package:new_app/src/video/video%20page/comments/comments_sheet.dart';
 import 'package:new_app/src/video/video%20page/page/video_analytics_page.dart';
@@ -60,8 +61,6 @@ class _VideoPageState extends State<VideoPage> with WidgetsBindingObserver {
   bool _pageVisible = false;
   bool _appActive = true;
   bool get _pageActive => _pageVisible && _appActive;
-
-  final Set<String> _saved = {};
 
   @override
   void initState() {
@@ -179,6 +178,17 @@ class _VideoPageState extends State<VideoPage> with WidgetsBindingObserver {
                   : PageView.builder(
                       controller: _pageController,
                       scrollDirection: Axis.vertical,
+                      // TikTok/YouTube-style feel: clamped physics tracks
+                      // the finger 1:1 instead of the default bouncy/elastic
+                      // response, so a swipe registers with much less
+                      // travel distance.
+                      physics: const PageScrollPhysics(
+                        parent: ClampingScrollPhysics(),
+                      ),
+                      // Keeps the adjacent page's widget tree already built
+                      // and laid out, so landing on it after a swipe has no
+                      // first-frame construction pause.
+                      allowImplicitScrolling: true,
                       itemCount: cars.length,
                       onPageChanged: (i) {
                         setState(() => _currentPage = i);
@@ -187,21 +197,21 @@ class _VideoPageState extends State<VideoPage> with WidgetsBindingObserver {
                       },
                       itemBuilder: (context, index) {
                         final car = cars[index];
-                        return _VideoReel(
-                          key: ValueKey(car.id),
-                          car: car,
-                          isActive: index == _currentPage,
-                          pageActive: _pageActive,
-                          muted: _muted,
-                          onToggleMute: () => setState(() => _muted = !_muted),
-                          saved: _saved.contains(car.id),
-                          onToggleSave: () => setState(() {
-                            if (_saved.contains(car.id)) {
-                              _saved.remove(car.id);
-                            } else {
-                              _saved.add(car.id);
-                            }
-                          }),
+                        // RepaintBoundary isolates each reel's repaints
+                        // (video frame, gradients, blur) so the swipe
+                        // transition doesn't force neighboring reels to
+                        // repaint too — this is the main jank source
+                        // during the page-change animation.
+                        return RepaintBoundary(
+                          child: _VideoReel(
+                            key: ValueKey(car.id),
+                            car: car,
+                            isActive: index == _currentPage,
+                            pageActive: _pageActive,
+                            muted: _muted,
+                            onToggleMute: () =>
+                                setState(() => _muted = !_muted),
+                          ),
                         );
                       },
                     ),
@@ -328,8 +338,6 @@ class _VideoReel extends StatefulWidget {
   final bool pageActive;
   final bool muted;
   final VoidCallback onToggleMute;
-  final bool saved;
-  final VoidCallback onToggleSave;
 
   const _VideoReel({
     Key? key,
@@ -338,8 +346,6 @@ class _VideoReel extends StatefulWidget {
     required this.pageActive,
     required this.muted,
     required this.onToggleMute,
-    required this.saved,
-    required this.onToggleSave,
   }) : super(key: key);
 
   @override
@@ -376,9 +382,28 @@ class _VideoReelState extends State<_VideoReel>
 
   late final AnimationController _likeAnim;
 
+  // ── ПРОГРЕСС/ПЕРЕМОТКА (TikTok-style seek bar) ───────────────────────
+  // Текущая позиция и длительность видео — обновляются через listener
+  // контроллера, троттлятся до ~4 раз/сек, чтобы не дёргать setState
+  // на каждый кадр воспроизведения (это отдельный reel в PageView —
+  // лишняя нагрузка на каждый кадр была бы заметна на свайпах).
+  Duration _videoDuration = Duration.zero;
+  Duration _videoPosition = Duration.zero;
+  DateTime? _lastTickUpdate;
+
+  // Пока пользователь тянет полоску пальцем — реальная позиция видео
+  // не используется для отрисовки прогресса, вместо неё _scrubFraction.
+  bool _scrubbing = false;
+  double _scrubFraction = 0.0;
+  bool _wasPlayingBeforeScrub = false;
+  // Троттлинг живой перемотки контроллера во время drag (см. _seekPreview).
+  DateTime? _lastPreviewSeek;
+
   static const _accentBlue = Color(0xFF4DA6FF);
   // Instagram-style like red.
   static const _likeRed = Color(0xFFFF3040);
+  // Жёлтая закладка «сохранено» (как в TikTok/YouTube).
+  static const _saveYellow = Color(0xFFFFD60A);
 
   // Данные ВЛАДЕЛЬЦА этого объявления (а не текущего пользователя).
   // Раньше имя/аватар приходили из VideoPage, где грузился профиль
@@ -413,7 +438,8 @@ class _VideoReelState extends State<_VideoReel>
   }
 
   /// Загружает всё, что нужно только активному reel: профиль владельца,
-  /// состояние лайка/подписки, счётчик комментариев, инкремент просмотра.
+  /// состояние лайка/подписки, счётчик комментариев, живой savesCount,
+  /// инкремент просмотра.
   /// Защищено флагом _heavyDataLoaded, чтобы не выполняться повторно.
   void _loadHeavyData() {
     if (_heavyDataLoaded) return;
@@ -427,6 +453,21 @@ class _VideoReelState extends State<_VideoReel>
           _recountFromSnapshot,
           onError: (_) {/* offline и т.п. — оставляем последнее значение */},
         );
+
+    // РЕАЛЬНЫЙ счётчик сохранений: живой листенер на документ авто —
+    // берём savesCount оттуда. Раньше на кнопке-закладке показывалось
+    // фейковое число из хеша id, теперь только настоящие данные.
+    _carDocSub ??= FirebaseFirestore.instance
+        .collection('cars')
+        .doc(widget.car.id)
+        .snapshots()
+        .listen((snap) {
+      final raw = (snap.data()?['savesCount'] as num?)?.toInt() ?? 0;
+      final n = raw < 0 ? 0 : raw;
+      if (mounted && n != _savesCount) {
+        setState(() => _savesCount = n);
+      }
+    }, onError: (_) {/* offline и т.п. — оставляем последнее значение */});
 
     // Владелец, смотрящий своё же объявление, просмотр не увеличивает —
     // это проверяется внутри incrementView.
@@ -461,7 +502,10 @@ class _VideoReelState extends State<_VideoReel>
   }
 
   Future<void> _openComments() async {
-    await CommentsSheet.show(context, widget.car.id);
+    // ownerId объявления передаётся в шторку комментариев — нужен, чтобы
+    // отметить комментарии владельца бейджем "Автор" и дать ему право
+    // закреплять/удалять любые комментарии (см. comments_sheet.dart).
+    await CommentsSheet.show(context, widget.car.id, widget.car.ownerId);
     if (!mounted) return;
     // КЛАВИАТУРА: после закрытия шторки комментариев жёстко прячем
     // клавиатуру, чтобы поле ввода из шторки не «вернуло» её на видео.
@@ -501,11 +545,38 @@ class _VideoReelState extends State<_VideoReel>
       if (!mounted) return;
       c.setLooping(true);
       c.setVolume(widget.muted ? 0.0 : 1.0);
+      // Прогресс-бар: фиксируем длительность и подписываемся на позицию.
+      _videoDuration = c.value.duration;
+      c.addListener(_onControllerTick);
       setState(() => _initialized = true);
       _syncPlayback();
     }).catchError((_) {
       if (mounted) setState(() => _hasVideo = false);
     });
+  }
+
+  /// Троттленное обновление позиции/длительности для полоски прогресса.
+  /// VideoPlayerController дёргает listener очень часто во время
+  /// проигрывания — здесь ограничиваем setState примерно 4 разами в
+  /// секунду, этого достаточно для плавной полоски, но не создаёт
+  /// лишней нагрузки на каждый кадр.
+  void _onControllerTick() {
+    if (!mounted || _scrubbing) return;
+    final c = _controller;
+    if (c == null) return;
+    final now = DateTime.now();
+    if (_lastTickUpdate != null &&
+        now.difference(_lastTickUpdate!) < const Duration(milliseconds: 250)) {
+      return;
+    }
+    _lastTickUpdate = now;
+    final val = c.value;
+    if (val.duration != _videoDuration || val.position != _videoPosition) {
+      setState(() {
+        _videoDuration = val.duration;
+        _videoPosition = val.position;
+      });
+    }
   }
 
   void _syncPlayback() {
@@ -553,7 +624,9 @@ class _VideoReelState extends State<_VideoReel>
   @override
   void dispose() {
     _commentsSub?.cancel();
+    _carDocSub?.cancel();
     _likeAnim.dispose();
+    _controller?.removeListener(_onControllerTick);
     _controller?.dispose();
     super.dispose();
   }
@@ -570,22 +643,16 @@ class _VideoReelState extends State<_VideoReel>
     setState(() {});
   }
 
-  /// Лайк синхронизирован с «Избранным»: лайкнул на видео — авто появляется
-  /// на странице избранного, снял лайк — убирается оттуда. Работает одинаково
-  /// и здесь, и на странице деталей.
-  void _toggleLikeSynced() {
-    final cars = context.read<CarsProvider>();
-    final favs = context.read<FavoritesProvider>();
-    final willLike = !cars.isLikedByMe(widget.car.id);
-    cars.toggleLike(widget.car.id);
-    if (favs.isFavorite(widget.car) != willLike) {
-      favs.toggleFavorite(widget.car);
-    }
+  /// Лайк в ленте — ТОЛЬКО счётчик/лайк на самом авто (CarsProvider).
+  /// Не трогает ни "Понравившееся" (FavoritesProvider/users/{uid}/favorites),
+  /// ни "Избранное" (SavedCarsProvider/users/{uid}/savedCars).
+  void _toggleLike() {
+    context.read<CarsProvider>().toggleLike(widget.car.id);
   }
 
   void _onDoubleTap() {
     if (!context.read<CarsProvider>().isLikedByMe(widget.car.id)) {
-      _toggleLikeSynced();
+      _toggleLike();
     }
     _likeAnim.forward(from: 0);
   }
@@ -709,7 +776,96 @@ class _VideoReelState extends State<_VideoReel>
     _applySpeed(false);
   }
 
-  late final int _saveBase = 100 + ((widget.car.id.hashCode.abs() ~/ 7) % 3000);
+  // ------------------------------------------------- seek bar (scrub)
+  //
+  // Полоска прогресса внизу ролика. Отдельный GestureDetector слушает
+  // горизонтальный drag И обычный тап — раньше слушался ТОЛЬКО drag,
+  // из-за чего простой тап по этой полоске ничего не делал, но
+  // событие всё равно "съедалось" ею (она лежит самым верхним слоем
+  // Stack и имеет HitTestBehavior.opaque) и не долетало до общего
+  // GestureDetector с play/pause — именно поэтому пауза иногда как
+  // будто не срабатывала, если палец попадал в эту полосу снизу экрана.
+  // Теперь тап по полоске имеет собственное осмысленное действие —
+  // мгновенная перемотка в это место.
+
+  void _onScrubStart(DragStartDetails details, double barWidth) {
+    _wasPlayingBeforeScrub = _controller?.value.isPlaying ?? false;
+    _controller?.pause();
+    HapticFeedback.selectionClick();
+    final fraction = (details.localPosition.dx / barWidth).clamp(0.0, 1.0);
+    setState(() {
+      _scrubbing = true;
+      _scrubFraction = fraction;
+    });
+    _seekPreview(fraction);
+  }
+
+  void _onScrubUpdate(DragUpdateDetails details, double barWidth) {
+    final fraction = (details.localPosition.dx / barWidth).clamp(0.0, 1.0);
+    setState(() {
+      _scrubFraction = fraction;
+    });
+    _seekPreview(fraction);
+  }
+
+  /// Перематывает КОНТРОЛЛЕР по факту (с троттлингом ~90мс), пока
+  /// пользователь тянет полоску — благодаря этому карточка-превью
+  /// показывает настоящий кадр видео в этот момент времени, а не
+  /// статичное фото объявления.
+  void _seekPreview(double fraction) {
+    final c = _controller;
+    final duration = _videoDuration;
+    if (c == null || duration <= Duration.zero) return;
+    final now = DateTime.now();
+    if (_lastPreviewSeek != null &&
+        now.difference(_lastPreviewSeek!) < const Duration(milliseconds: 90)) {
+      return;
+    }
+    _lastPreviewSeek = now;
+    c.seekTo(duration * fraction);
+  }
+
+  Future<void> _onScrubEnd(DragEndDetails details) async {
+    final c = _controller;
+    final duration = _videoDuration;
+    if (c != null && duration > Duration.zero) {
+      final target = duration * _scrubFraction;
+      await c.seekTo(target);
+      _videoPosition = target;
+      if (_wasPlayingBeforeScrub && widget.isActive && widget.pageActive) {
+        c.play();
+      }
+    }
+    if (mounted) setState(() => _scrubbing = false);
+  }
+
+  void _onScrubCancel() {
+    if (_wasPlayingBeforeScrub && widget.isActive && widget.pageActive) {
+      _controller?.play();
+    }
+    if (mounted) setState(() => _scrubbing = false);
+  }
+
+  /// Обычный тап (без протягивания) по полоске — сразу перематывает
+  /// видео в то место, куда тапнули.
+  Future<void> _onSeekTap(TapUpDetails details, double barWidth) async {
+    final c = _controller;
+    final duration = _videoDuration;
+    if (c == null || duration <= Duration.zero) return;
+    final fraction = (details.localPosition.dx / barWidth).clamp(0.0, 1.0);
+    HapticFeedback.selectionClick();
+    final target = duration * fraction;
+    await c.seekTo(target);
+    if (mounted) {
+      setState(() => _videoPosition = target);
+    }
+  }
+
+  // ----- РЕАЛЬНЫЙ счётчик сохранений (savesCount с документа авто) -----
+  // Живой листенер запускается в _loadHeavyData (только для активного
+  // reel). Раньше здесь было фейковое число _saveBase из хеша id — удалено.
+  int _savesCount = 0;
+  StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _carDocSub;
 
   // ----- Счётчик комментариев (комментарии + все ответы) -----
   int _commentsTotal = 0;
@@ -783,6 +939,11 @@ class _VideoReelState extends State<_VideoReel>
             ),
           ),
         ),
+
+        // Полоска прогресса + перемотка — самый верхний слой Stack,
+        // чтобы горизонтальный drag в нижней полосе экрана долетал именно
+        // до неё, а не терялся среди остальных виджетов.
+        _seekBar(),
       ],
     );
   }
@@ -1040,6 +1201,202 @@ class _VideoReelState extends State<_VideoReel>
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  /// Полоска прогресса видео внизу ролика (TikTok-style): тонкая линия,
+  /// которую можно тянуть пальцем влево/вправо, чтобы перемотать видео,
+  /// либо просто тапнуть в нужное место для мгновенного перехода.
+  /// Пока не активна перемотка — справа виден таймкод "элапсед / общая
+  /// длительность". Во время перетаскивания над полоской всплывает
+  /// карточка-превью с реальным кадром видео на этой позиции.
+  Widget _seekBar() {
+    if (!_hasVideo || !_initialized) return const SizedBox.shrink();
+    final duration = _videoDuration;
+    if (duration <= Duration.zero) return const SizedBox.shrink();
+
+    final progress = _scrubbing
+        ? _scrubFraction
+        : (duration.inMilliseconds > 0
+            ? (_videoPosition.inMilliseconds / duration.inMilliseconds)
+                .clamp(0.0, 1.0)
+            : 0.0);
+
+    return Positioned(
+      left: 0,
+      right: 0,
+      bottom: 0,
+      child: AnimatedOpacity(
+        opacity: (_uiHidden && !_scrubbing) ? 0.0 : 1.0,
+        duration: const Duration(milliseconds: 200),
+        child: IgnorePointer(
+          ignoring: _uiHidden && !_scrubbing,
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final barWidth = constraints.maxWidth;
+              return GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTapUp: (d) => _onSeekTap(d, barWidth),
+                onHorizontalDragStart: (d) => _onScrubStart(d, barWidth),
+                onHorizontalDragUpdate: (d) => _onScrubUpdate(d, barWidth),
+                onHorizontalDragEnd: _onScrubEnd,
+                onHorizontalDragCancel: _onScrubCancel,
+                child: Container(
+                  color: Colors.transparent,
+                  // Область захвата пальцем выше самой линии — так легче
+                  // попасть по полоске, не целясь точно в 2 пикселя.
+                  height: 2.6.h,
+                  child: Stack(
+                    clipBehavior: Clip.none,
+                    alignment: Alignment.bottomLeft,
+                    children: [
+                      // фон-дорожка — сделана заметнее (толще и контрастнее),
+                      // чтобы прогресс было видно даже на светлом видео.
+                      Positioned(
+                        left: 0,
+                        right: 0,
+                        bottom: 0,
+                        child: Container(
+                          height: _scrubbing ? 4 : 3,
+                          color: Colors.white.withOpacity(0.35),
+                        ),
+                      ),
+                      // заполненная часть — лёгкое акцентное свечение,
+                      // чтобы прогресс выделялся на любом фоне видео.
+                      Positioned(
+                        left: 0,
+                        bottom: 0,
+                        child: Container(
+                          height: _scrubbing ? 4 : 3,
+                          width: barWidth * progress,
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            boxShadow: [
+                              BoxShadow(
+                                color: _accentBlue.withOpacity(0.9),
+                                blurRadius: 6,
+                                spreadRadius: 0.4,
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      // ползунок — виден только во время перетаскивания,
+                      // чуть крупнее и с акцентной обводкой для видимости.
+                      if (_scrubbing)
+                        Positioned(
+                          left: (barWidth * progress - 6.5)
+                              .clamp(0.0, barWidth - 13),
+                          bottom: -5,
+                          child: Container(
+                            width: 13,
+                            height: 13,
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              shape: BoxShape.circle,
+                              border: Border.all(
+                                  color: _accentBlue, width: 2),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withOpacity(0.3),
+                                  blurRadius: 4,
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      // карточка-превью с реальным кадром видео на позиции
+                      // перемотки
+                      if (_scrubbing)
+                        Positioned(
+                          left: (barWidth * progress - 13.w)
+                              .clamp(0.0, barWidth - 26.w),
+                          bottom: 3.6.h,
+                          child: _scrubPreviewCard(),
+                        ),
+                      // таймкод элапсед/общая длительность — виден
+                      // всегда, пока UI не скрыт и перемотка не активна
+                      if (!_scrubbing)
+                        Positioned(
+                          right: 2.w,
+                          bottom: 1.1.h,
+                          child: Text(
+                            '${_fmtDuration(_videoPosition)} / ${_fmtDuration(duration)}',
+                            style: TextStyle(
+                              color: Colors.white.withOpacity(0.85),
+                              fontSize: 9.5.sp,
+                              fontWeight: FontWeight.w600,
+                              shadows: const [
+                                Shadow(color: Colors.black54, blurRadius: 4)
+                              ],
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Карточка-превью над полоской прогресса — показывает НАСТОЯЩИЙ кадр
+  /// видео (не фото объявления) на текущей позиции перемотки: контроллер
+  /// уже перемотан туда через _seekPreview, пока палец тянет полоску.
+  /// Соотношение сторон берётся у самого видео (портретное, как в
+  /// ленте), а не зашито жёстко альбомным 16:10, как раньше — из-за
+  /// этого превью выглядело как обрезанный квадрат.
+  Widget _scrubPreviewCard() {
+    final target = _videoDuration * _scrubFraction;
+    final c = _controller;
+    final aspect =
+        (c != null && c.value.isInitialized && c.value.aspectRatio > 0)
+            ? c.value.aspectRatio
+            : 9 / 16;
+    return Container(
+      width: 26.w,
+      // Небольшой отступ от полоски и краёв экрана — раньше карточка
+      // была впритык, теперь просторнее.
+      margin: EdgeInsets.only(bottom: 0.4.h),
+      padding: EdgeInsets.all(1.2.w),
+      decoration: BoxDecoration(
+        color: Colors.black.withOpacity(0.85),
+        borderRadius: BorderRadius.circular(2.6.w),
+        border: Border.all(color: Colors.white.withOpacity(0.3)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.4),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          ClipRRect(
+            borderRadius: BorderRadius.circular(1.8.w),
+            child: AspectRatio(
+              aspectRatio: aspect,
+              child: (c != null && c.value.isInitialized)
+                  ? VideoPlayer(c)
+                  : Container(color: Colors.white.withOpacity(0.12)),
+            ),
+          ),
+          SizedBox(height: 0.7.h),
+          Text(
+            _fmtDuration(target),
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 10.5.sp,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -1310,11 +1667,13 @@ class _VideoReelState extends State<_VideoReel>
   }
 
   // ── ACTION RAIL — Instagram Reels-style: тонкие иконки (кроме сердца),
-  // без нижней миниатюры-«кружка», компактнее и ближе к правому краю,
-  // чтобы видео занимало максимум пространства.
+  // без нижней миниатюры-«кружка», ближе к правому краю. Иконки увеличены
+  // ещё немного (было 2.9-3.0.h, стало 3.3-3.4.h), подписи 11px,
+  // отступы между кнопками чуть больше.
   Widget _actionRail(Car car) {
     final cars = context.watch<CarsProvider>();
     final liked = cars.isLikedByMe(car.id);
+    final saved = context.watch<SavedCarsProvider>().isSaved(car.id);
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -1322,35 +1681,36 @@ class _VideoReelState extends State<_VideoReel>
           icon: liked ? Icons.favorite_rounded : Icons.favorite_border_rounded,
           color: liked ? _likeRed : Colors.white,
           text: _fmtCount(car.likesCount),
-          // Лайк также добавляет/убирает авто из «Избранного».
-          onTap: _toggleLikeSynced,
-          iconSize: 2.7.h,
+          onTap: _toggleLike,
+          iconSize: 3.4.h,
         ),
-        SizedBox(height: 1.4.h),
+        SizedBox(height: 1.6.h),
         _railButton(
           icon: Icons.mode_comment_outlined,
           color: Colors.white,
           text: _fmtCount(_commentsTotal),
           onTap: _openComments,
-          iconSize: 2.6.h,
+          iconSize: 3.3.h,
         ),
-        SizedBox(height: 1.4.h),
+        SizedBox(height: 1.6.h),
         _railButton(
           icon: Icons.share_outlined,
           color: Colors.white,
           text: 'Поделиться',
           onTap: () => _soon('Скоро можно будет делиться объявлением'),
-          iconSize: 2.6.h,
+          iconSize: 3.3.h,
         ),
-        SizedBox(height: 1.4.h),
+        SizedBox(height: 1.6.h),
+        // "Избранное" — сохраняет авто в SavedCarsProvider
+        // (users/{uid}/savedCars). Не связано с лайком/подпиской.
+        // Число — РЕАЛЬНЫЙ savesCount с документа авто (живой листенер
+        // в _loadHeavyData). Жёлтая закладка = сохранено.
         _railButton(
-          icon: widget.saved
-              ? Icons.bookmark_rounded
-              : Icons.bookmark_border_rounded,
-          color: Colors.white,
-          text: _fmtCount(_saveBase + (widget.saved ? 1 : 0)),
-          onTap: widget.onToggleSave,
-          iconSize: 2.6.h,
+          icon: saved ? Icons.bookmark_rounded : Icons.bookmark_border_rounded,
+          color: saved ? _saveYellow : Colors.white,
+          text: '$_savesCount',
+          onTap: () => context.read<SavedCarsProvider>().toggleSaved(car),
+          iconSize: 3.3.h,
         ),
       ],
     );
@@ -1372,7 +1732,7 @@ class _VideoReelState extends State<_VideoReel>
           Icon(
             icon,
             color: color,
-            size: iconSize ?? 3.2.h,
+            size: iconSize ?? 3.4.h,
             shadows: const [Shadow(color: Colors.black45, blurRadius: 4)],
           ),
           SizedBox(height: 0.35.h),
@@ -1380,7 +1740,7 @@ class _VideoReelState extends State<_VideoReel>
             text,
             style: const TextStyle(
               color: Colors.white,
-              fontSize: 10,
+              fontSize: 11,
               fontWeight: FontWeight.w600,
               shadows: [Shadow(color: Colors.black45, blurRadius: 4)],
             ),
@@ -1395,13 +1755,20 @@ class _VideoReelState extends State<_VideoReel>
   /// «год · пробег · просмотры» вместо высокой карточки с отдельным
   /// блоком статистики. Видео перекрывается заметно меньше.
   /// Тап — страница деталей авто (как раньше).
+  ///
+  /// ПРОИЗВОДИТЕЛЬНОСТЬ: BackdropFilter с большим sigma — один из самых
+  /// дорогих виджетов Flutter (полный GPU-блюр всего экрана каждый кадр).
+  /// Во время свайпа между роликами это конкурирует за бюджет кадра и
+  /// ощущается как рывки. Sigma снижена с 18 до 8 — визуально всё ещё
+  /// "матовое стекло", но заметно дешевле для GPU, особенно на бюджетных
+  /// Android-устройствах.
   Widget _infoCard(Car car) {
     return GestureDetector(
       onTap: _openDetail,
       child: ClipRRect(
         borderRadius: BorderRadius.circular(3.5.w),
         child: BackdropFilter(
-          filter: ui.ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+          filter: ui.ImageFilter.blur(sigmaX: 8, sigmaY: 8),
           child: Container(
             padding: EdgeInsets.symmetric(horizontal: 2.8.w, vertical: 1.h),
             decoration: BoxDecoration(
@@ -1533,5 +1900,14 @@ class _VideoReelState extends State<_VideoReel>
       return '${v.toStringAsFixed(v >= 10 ? 0 : 1)}K';
     }
     return '$n';
+  }
+
+  /// Форматирует Duration в "m:ss" (например "1:07"), как в TikTok/YouTube.
+  String _fmtDuration(Duration d) {
+    if (d.isNegative) return '0:00';
+    final totalSeconds = d.inSeconds;
+    final m = totalSeconds ~/ 60;
+    final s = totalSeconds % 60;
+    return '$m:${s.toString().padLeft(2, '0')}';
   }
 }
