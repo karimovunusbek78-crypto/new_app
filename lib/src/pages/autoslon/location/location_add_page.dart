@@ -19,6 +19,11 @@ class _KgCity {
 const _kgOverview = LatLng(41.20438, 74.766098);
 const _kgOverviewZoom = 6.2;
 
+// Rough bounding box of Kyrgyzstan: minLon,minLat,maxLon,maxLat.
+// Used to bias/limit results to the country without needing a
+// countrycodes param (Photon uses bbox instead).
+const _kgBbox = '69.2,39.0,80.3,43.4';
+
 const List<_KgCity> _kgCities = [
   _KgCity('Бишкек', LatLng(42.8746, 74.5698)),
   _KgCity('Ош', LatLng(40.5283, 72.7985)),
@@ -28,6 +33,63 @@ const List<_KgCity> _kgCities = [
   _KgCity('Нарын', LatLng(41.4287, 75.9908), zoom: 12.5),
   _KgCity('Баткен', LatLng(40.0606, 70.8189), zoom: 12.5),
 ];
+
+// ── Geocoding providers ─────────────────────────────────────────
+//
+// PRIMARY: Photon (https://photon.komoot.io) — free, no registration/
+// contact-header requirement, and (unlike Nominatim) does fuzzy /
+// typo-tolerant matching out of the box, which is why "Чуй 123" style
+// queries with a small typo used to come back completely empty.
+//
+// FALLBACK: Nominatim — only used silently if Photon itself fails to
+// respond (network hiccup, provider outage), so a single provider going
+// down doesn't take the whole feature out. Nominatim IS strict about a
+// descriptive User-Agent, so keep the contact below real if you rely on
+// this fallback path in production.
+const _nominatimUserAgent = 'autosalon-app/1.0 (contact: support@yourapp.kg)';
+
+class _GeoThrottle {
+  static DateTime? _lastNominatimRequest;
+  static const _minGap = Duration(milliseconds: 1100);
+
+  // Only Nominatim publishes a hard 1 req/sec policy — Photon doesn't,
+  // so we only throttle calls that actually hit Nominatim.
+  static Future<void> waitForNominatim() async {
+    final last = _lastNominatimRequest;
+    if (last != null) {
+      final elapsed = DateTime.now().difference(last);
+      if (elapsed < _minGap) {
+        await Future.delayed(_minGap - elapsed);
+      }
+    }
+    _lastNominatimRequest = DateTime.now();
+  }
+}
+
+/// Normalized place result — both Photon and the Nominatim fallback get
+/// converted into this shape so the rest of the UI doesn't care which
+/// provider actually answered.
+class _PlaceResult {
+  final String title;
+  final String subtitle;
+  final double lat;
+  final double lon;
+  final String fullAddress;
+  final String city;
+  /// True when this came from the broadened "similar places" fallback
+  /// query rather than the exact/bounded one.
+  final bool similar;
+
+  const _PlaceResult({
+    required this.title,
+    required this.subtitle,
+    required this.lat,
+    required this.lon,
+    required this.fullAddress,
+    required this.city,
+    this.similar = false,
+  });
+}
 
 enum _Step { intro, map }
 
@@ -81,6 +143,8 @@ class _LocationAddPageState extends State<LocationAddPage>
   String _resolvedCity = '';
   late final TextEditingController _addressController;
   bool _geocoding = false;
+  bool _geocodeFailed = false;
+  LatLng? _lastFailedPoint;
   bool _locating = false;
 
   // Location photos — max 2
@@ -90,8 +154,16 @@ class _LocationAddPageState extends State<LocationAddPage>
   // Search
   final _searchController = TextEditingController();
   bool _searching = false;
-  List<Map<String, dynamic>> _searchResults = [];
+  bool _searchFailed = false;
+  List<_PlaceResult> _searchResults = [];
   bool _showResults = false;
+  // True when the results currently shown came from the broadened
+  // "similar places" fallback rather than the exact KG-bounded query.
+  bool _showingSimilar = false;
+  Timer? _searchDebounce;
+  // Guards against an older, slower request overwriting a newer one's
+  // results if they resolve out of order.
+  int _searchRequestId = 0;
 
   late final AnimationController _introController = AnimationController(
     vsync: this,
@@ -112,6 +184,7 @@ class _LocationAddPageState extends State<LocationAddPage>
 
   @override
   void dispose() {
+    _searchDebounce?.cancel();
     _cameraAnim.dispose();
     _introController.dispose();
     _addressController.dispose();
@@ -150,85 +223,173 @@ class _LocationAddPageState extends State<LocationAddPage>
     }
   }
 
-  // ── Reverse geocoding ─────────────────────────────────────────
+  // ── Photon parsing helpers ───────────────────────────────────
+  static String? _str(dynamic v) {
+    if (v == null) return null;
+    final s = v.toString().trim();
+    return s.isEmpty ? null : s;
+  }
+
+  static _PlaceResult? _placeFromPhotonFeature(
+    Map<String, dynamic> feature, {
+    bool similar = false,
+  }) {
+    final props = feature['properties'] as Map<String, dynamic>? ?? {};
+    final geometry = feature['geometry'] as Map<String, dynamic>?;
+    final coords = geometry?['coordinates'] as List<dynamic>?;
+    if (coords == null || coords.length < 2) return null;
+    final lon = (coords[0] as num).toDouble();
+    final lat = (coords[1] as num).toDouble();
+
+    final name = _str(props['name']);
+    final houseNumber = _str(props['housenumber']);
+    final street = _str(props['street']);
+    final district = _str(props['district']);
+    final city = _str(props['city']);
+    final county = _str(props['county']);
+    final state = _str(props['state']);
+    final country = _str(props['country']);
+
+    final streetPart =
+        [street, houseNumber].where((s) => s != null).join(' ');
+    final resolvedCity = city ?? district ?? county ?? state ?? 'Точка на карте';
+
+    final title = name ?? (streetPart.isNotEmpty ? streetPart : resolvedCity);
+    final subtitleParts = <String>[
+      if (streetPart.isNotEmpty && title != streetPart) streetPart,
+      if (resolvedCity != title) resolvedCity,
+      if (country != null) country,
+    ];
+    final subtitle = subtitleParts.join(', ');
+
+    final fullAddressParts = <String>[
+      if (streetPart.isNotEmpty) streetPart,
+      if (district != null && district != resolvedCity) district,
+      resolvedCity,
+    ];
+    final fullAddress = fullAddressParts.isNotEmpty
+        ? fullAddressParts.join(', ')
+        : title;
+
+    return _PlaceResult(
+      title: title,
+      subtitle: subtitle,
+      lat: lat,
+      lon: lon,
+      fullAddress: fullAddress,
+      city: resolvedCity,
+      similar: similar,
+    );
+  }
+
+  static _PlaceResult? _placeFromNominatim(Map<String, dynamic> json) {
+    final lat = double.tryParse(json['lat']?.toString() ?? '');
+    final lon = double.tryParse(json['lon']?.toString() ?? '');
+    if (lat == null || lon == null) return null;
+    final addr = json['address'] as Map<String, dynamic>? ?? {};
+    final road = _str(addr['road']) ?? _str(addr['pedestrian']);
+    final houseNumber = _str(addr['house_number']);
+    final suburb = _str(addr['suburb']) ?? _str(addr['neighbourhood']);
+    final city = _str(addr['city']) ??
+        _str(addr['town']) ??
+        _str(addr['village']) ??
+        _str(addr['municipality']) ??
+        'Точка на карте';
+    final streetPart =
+        [road, houseNumber].where((s) => s != null).join(', ');
+    final display = _str(json['display_name']) ?? city;
+
+    return _PlaceResult(
+      title: display!.split(',').first.trim(),
+      subtitle: display,
+      lat: lat,
+      lon: lon,
+      fullAddress: streetPart.isNotEmpty
+          ? [streetPart, suburb, city].where((s) => s != null && (s as String).isNotEmpty).join(', ')
+          : display,
+      city: city,
+    );
+  }
+
+  // ── Reverse geocoding (Photon primary, Nominatim fallback) ────
   Future<void> _reverseGeocode(LatLng point) async {
-    setState(() => _geocoding = true);
-    try {
-      final uri = Uri.parse(
-          'https://nominatim.openstreetmap.org/reverse'
-          '?lat=${point.latitude}&lon=${point.longitude}'
-          '&format=json&addressdetails=1&accept-language=ru');
-      final res = await http
-          .get(uri, headers: {'User-Agent': 'autosalon-app/1.0'})
-          .timeout(const Duration(seconds: 8));
+    setState(() {
+      _geocoding = true;
+      _geocodeFailed = false;
+    });
 
-      if (res.statusCode == 200) {
-        final json = jsonDecode(res.body) as Map<String, dynamic>;
-        final addr = json['address'] as Map<String, dynamic>? ?? {};
-        final road =
-            addr['road'] ?? addr['pedestrian'] ?? addr['footway'] ?? '';
-        final houseNumber = addr['house_number'] ?? '';
-        final suburb = addr['suburb'] ?? addr['neighbourhood'] ?? '';
+    _PlaceResult? result = await _reverseViaPhoton(point);
+    result ??= await _reverseViaNominatim(point);
 
-        // Расширенная цепочка fallback'ов — Nominatim кладёт населённый
-        // пункт под разными ключами в зависимости от региона/уровня админ.
-        // деления, особенно за пределами крупных городов КР.
-        final city = addr['city'] ??
-            addr['town'] ??
-            addr['village'] ??
-            addr['municipality'] ??
-            addr['city_district'] ??
-            addr['county'] ??
-            addr['state_district'] ??
-            '';
+    if (!mounted) return;
 
-        final streetPart =
-            [road, houseNumber].where((s) => s.isNotEmpty).join(', ');
-        var full =
-            [streetPart, suburb, city].where((s) => s.isNotEmpty).join(', ');
-
-        // Если структурированный адрес пуст — используем display_name
-        // как запасной вариант, чтобы поле адреса не оставалось пустым.
-        if (full.isEmpty) {
-          final displayName = json['display_name'] as String? ?? '';
-          full = displayName.split(',').take(3).join(',').trim();
-        }
-
-        setState(() {
-          _resolvedCity = city.isNotEmpty
-              ? city
-              : (suburb.isNotEmpty
-                  ? suburb
-                  : (_activeCity ?? 'Точка на карте'));
-          if (full.isNotEmpty) {
-            _addressController.text = full;
-            _addressController.selection =
-                TextSelection.collapsed(offset: _addressController.text.length);
-          }
-        });
-      } else {
-        _showGeocodeError();
-      }
-    } catch (_) {
-      if (mounted) _showGeocodeError();
-    } finally {
-      if (mounted) setState(() => _geocoding = false);
+    if (result != null) {
+      setState(() {
+        _resolvedCity = result!.city;
+        _addressController.text = result.fullAddress;
+        _addressController.selection =
+            TextSelection.collapsed(offset: _addressController.text.length);
+        _geocoding = false;
+        _geocodeFailed = false;
+      });
+    } else {
+      setState(() => _geocoding = false);
+      _markGeocodeFailed(point);
     }
   }
 
-  void _showGeocodeError() {
+  Future<_PlaceResult?> _reverseViaPhoton(LatLng point) async {
+    try {
+      final uri = Uri.parse('https://photon.komoot.io/reverse'
+          '?lon=${point.longitude}&lat=${point.latitude}&lang=ru');
+      final res = await http.get(uri).timeout(const Duration(seconds: 8));
+      if (res.statusCode != 200) return null;
+      final json = jsonDecode(res.body) as Map<String, dynamic>;
+      final features = json['features'] as List<dynamic>? ?? [];
+      if (features.isEmpty) return null;
+      return _placeFromPhotonFeature(features.first as Map<String, dynamic>);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<_PlaceResult?> _reverseViaNominatim(LatLng point) async {
+    try {
+      await _GeoThrottle.waitForNominatim();
+      final uri = Uri.parse('https://nominatim.openstreetmap.org/reverse'
+          '?lat=${point.latitude}&lon=${point.longitude}'
+          '&format=json&addressdetails=1&accept-language=ru');
+      final res = await http
+          .get(uri, headers: {'User-Agent': _nominatimUserAgent})
+          .timeout(const Duration(seconds: 10));
+      if (res.statusCode != 200) return null;
+      final json = jsonDecode(res.body) as Map<String, dynamic>;
+      return _placeFromNominatim(json);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  void _markGeocodeFailed(LatLng point) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-          content: Text('Не удалось определить адрес. Попробуйте ещё раз.')),
-    );
+    _lastFailedPoint = point;
+    setState(() {
+      _geocodeFailed = true;
+      // Точка всё равно фиксируется — просто без готового адреса,
+      // пользователь может вписать его вручную и сохранить локацию.
+      _resolvedCity = _activeCity ?? 'Точка на карте';
+    });
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+      content: Text(
+          'Не удалось определить адрес по этой точке. Впишите его вручную или нажмите «Повторить».'),
+      duration: Duration(seconds: 4),
+    ));
   }
 
   // ── Current location (с запросом разрешения) ──────────────────
   Future<void> _goToMyLocation() async {
     if (_locating) return;
 
-    // 1. Включена ли геолокация (GPS) на устройстве?
     if (!await Geolocator.isLocationServiceEnabled()) {
       if (!mounted) return;
       final open = await _showPermissionDialog(
@@ -241,11 +402,8 @@ class _LocationAddPageState extends State<LocationAddPage>
       return;
     }
 
-    // 2. Текущий статус разрешения
     var permission = await Geolocator.checkPermission();
 
-    // Разрешение ещё не выдано — сначала спрашиваем пользователя,
-    // затем показываем системный запрос.
     if (permission == LocationPermission.denied) {
       if (!mounted) return;
       final allow = await _showPermissionDialog(
@@ -254,11 +412,10 @@ class _LocationAddPageState extends State<LocationAddPage>
             'Разрешите доступ к геолокации, чтобы автоматически найти, где вы находитесь, и отметить точку на карте.',
         confirmText: 'Разрешить',
       );
-      if (allow != true) return; // пользователь отказался
+      if (allow != true) return;
       permission = await Geolocator.requestPermission();
     }
 
-    // Запрещено навсегда — ведём в системные настройки приложения.
     if (permission == LocationPermission.deniedForever) {
       if (!mounted) return;
       final open = await _showPermissionDialog(
@@ -271,25 +428,20 @@ class _LocationAddPageState extends State<LocationAddPage>
       return;
     }
 
-    // Пользователь отклонил системный запрос
     if (permission == LocationPermission.denied) return;
 
-    // 3. Разрешение есть — ищем и показываем местоположение
     await _fetchAndShowLocation();
   }
 
   Future<void> _fetchAndShowLocation() async {
     setState(() => _locating = true);
     try {
-      // Последняя известная позиция приходит мгновенно — запасной вариант.
       Position? pos = await Geolocator.getLastKnownPosition();
 
-      // Свежие координаты (до 20 сек). Если истёк таймаут, но есть
-      // last-known — используем её вместо ошибки.
       try {
         pos = await Geolocator.getCurrentPosition(
           locationSettings: const LocationSettings(
-            accuracy: LocationAccuracy.medium, // быстрее ловит сигнал, чем high
+            accuracy: LocationAccuracy.medium,
             timeLimit: Duration(seconds: 20),
           ),
         );
@@ -313,7 +465,7 @@ class _LocationAddPageState extends State<LocationAddPage>
         _addressController.text = '';
       });
       _flyTo(point, 16);
-      _reverseGeocode(point); // адрес подтянется автоматически
+      _reverseGeocode(point);
     } catch (e) {
       _showLocationError('Ошибка геолокации: $e');
     } finally {
@@ -321,7 +473,6 @@ class _LocationAddPageState extends State<LocationAddPage>
     }
   }
 
-  // Диалог-запрос разрешения (rationale) перед системным запросом.
   Future<bool?> _showPermissionDialog({
     required String title,
     required String message,
@@ -398,48 +549,121 @@ class _LocationAddPageState extends State<LocationAddPage>
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
   }
 
-  // ── Place search ──────────────────────────────────────────────
-  Future<void> _searchPlaces(String query) async {
+  // ── Place search (Photon primary + broadened fallback, Nominatim
+  // as last resort) ────────────────────────────────────────────
+  void _onSearchChanged(String query) {
+    _searchDebounce?.cancel();
     if (query.trim().isEmpty) {
+      setState(() {
+        _searchResults = [];
+        _showResults = false;
+        _searchFailed = false;
+      });
+      return;
+    }
+    _searchDebounce = Timer(
+      const Duration(milliseconds: 400),
+      () => _searchPlaces(query),
+    );
+  }
+
+  Future<void> _searchPlaces(String query) async {
+    final trimmed = query.trim();
+    if (trimmed.length < 2) {
       setState(() {
         _searchResults = [];
         _showResults = false;
       });
       return;
     }
-    setState(() => _searching = true);
+    final requestId = ++_searchRequestId;
+    setState(() {
+      _searching = true;
+      _searchFailed = false;
+    });
+
+    // 1) Exact-ish search bounded to Kyrgyzstan.
+    var results = await _searchViaPhoton(trimmed, bounded: true);
+
+    // 2) Nothing in-country — broaden the same query worldwide instead
+    //    of just saying "not found". These get flagged as `similar`.
+    var similar = false;
+    if (results.isEmpty) {
+      results = await _searchViaPhoton(trimmed, bounded: false);
+      similar = results.isNotEmpty;
+    }
+
+    // 3) Photon itself failed to respond (not just "no matches") —
+    //    try Nominatim once as a last resort before giving up.
+    if (results.isEmpty) {
+      results = await _searchViaNominatim(trimmed);
+    }
+
+    if (requestId != _searchRequestId || !mounted) return;
+
+    setState(() {
+      _searchResults = results;
+      _showResults = results.isNotEmpty;
+      _showingSimilar = similar && results.isNotEmpty;
+      _searchFailed = results.isEmpty;
+      _searching = false;
+    });
+  }
+
+  Future<List<_PlaceResult>> _searchViaPhoton(
+    String query, {
+    required bool bounded,
+  }) async {
     try {
-      final uri = Uri.parse(
-          'https://nominatim.openstreetmap.org/search'
-          '?q=${Uri.encodeComponent(query)}'
-          '&format=json&limit=5&accept-language=ru');
-      final res = await http
-          .get(uri, headers: {'User-Agent': 'autosalon-app/1.0'})
-          .timeout(const Duration(seconds: 8));
-      if (res.statusCode == 200) {
-        final list = jsonDecode(res.body) as List<dynamic>;
-        setState(() {
-          _searchResults = list.cast<Map<String, dynamic>>();
-          _showResults = _searchResults.isNotEmpty;
-        });
-      }
-    } catch (_) {} finally {
-      if (mounted) setState(() => _searching = false);
+      final uri = Uri.parse('https://photon.komoot.io/api/'
+          '?q=${Uri.encodeComponent(query)}&lang=ru&limit=6'
+          '${bounded ? '&bbox=$_kgBbox' : ''}');
+      final res = await http.get(uri).timeout(const Duration(seconds: 8));
+      if (res.statusCode != 200) return [];
+      final json = jsonDecode(res.body) as Map<String, dynamic>;
+      final features = json['features'] as List<dynamic>? ?? [];
+      return features
+          .map((f) => _placeFromPhotonFeature(
+              f as Map<String, dynamic>,
+              similar: !bounded))
+          .whereType<_PlaceResult>()
+          .toList();
+    } catch (_) {
+      return [];
     }
   }
 
-  void _onSearchResultTapped(Map<String, dynamic> result) {
-    final lat = double.tryParse(result['lat'] as String? ?? '') ?? 0;
-    final lng = double.tryParse(result['lon'] as String? ?? '') ?? 0;
-    final point = LatLng(lat, lng);
-    final displayName = result['display_name'] as String? ?? '';
+  Future<List<_PlaceResult>> _searchViaNominatim(String query) async {
+    try {
+      await _GeoThrottle.waitForNominatim();
+      final uri = Uri.parse('https://nominatim.openstreetmap.org/search'
+          '?q=${Uri.encodeComponent(query)}'
+          '&format=json&limit=6&accept-language=ru&countrycodes=kg');
+      final res = await http
+          .get(uri, headers: {'User-Agent': _nominatimUserAgent})
+          .timeout(const Duration(seconds: 10));
+      if (res.statusCode != 200) return [];
+      final list = jsonDecode(res.body) as List<dynamic>;
+      return list
+          .map((j) => _placeFromNominatim(j as Map<String, dynamic>))
+          .whereType<_PlaceResult>()
+          .toList();
+    } catch (_) {
+      return [];
+    }
+  }
+
+  void _onSearchResultTapped(_PlaceResult result) {
+    final point = LatLng(result.lat, result.lon);
     setState(() {
       _activeCity = null;
       _selectedPoint = point;
-      _addressController.text = displayName;
-      _searchController.text = displayName.split(',').first;
+      _resolvedCity = result.city;
+      _addressController.text = result.fullAddress;
+      _searchController.text = result.title;
       _showResults = false;
       _searchResults = [];
+      _showingSimilar = false;
     });
     _flyTo(point, 15);
     FocusScope.of(context).unfocus();
@@ -738,7 +962,7 @@ class _LocationAddPageState extends State<LocationAddPage>
                     ),
                     child: TextField(
                       controller: _searchController,
-                      onChanged: _searchPlaces,
+                      onChanged: _onSearchChanged,
                       onSubmitted: _searchPlaces,
                       style: TextStyle(
                           fontSize: 13.sp,
@@ -764,10 +988,13 @@ class _LocationAddPageState extends State<LocationAddPage>
                         suffixIcon: _searchController.text.isNotEmpty
                             ? GestureDetector(
                                 onTap: () {
+                                  _searchDebounce?.cancel();
                                   _searchController.clear();
                                   setState(() {
                                     _searchResults = [];
                                     _showResults = false;
+                                    _searchFailed = false;
+                                    _showingSimilar = false;
                                   });
                                 },
                                 child: Icon(Icons.close,
@@ -782,7 +1009,7 @@ class _LocationAddPageState extends State<LocationAddPage>
                   ),
                 ),
 
-                // Autocomplete results
+                // Autocomplete results (exact or "similar" fallback)
                 if (_showResults)
                   Padding(
                     padding: EdgeInsets.fromLTRB(14.w, 0.5.h, 4.w, 0),
@@ -799,51 +1026,111 @@ class _LocationAddPageState extends State<LocationAddPage>
                       ),
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
-                        children: _searchResults.take(5).map((r) {
-                          final parts =
-                              (r['display_name'] as String? ?? '').split(',');
-                          return InkWell(
-                            onTap: () => _onSearchResultTapped(r),
-                            child: Padding(
-                              padding: EdgeInsets.symmetric(
-                                  horizontal: 4.w, vertical: 1.4.h),
+                        children: [
+                          if (_showingSimilar)
+                            Padding(
+                              padding: EdgeInsets.fromLTRB(4.w, 1.2.h, 4.w, 0.4.h),
                               child: Row(
                                 children: [
-                                  Icon(Icons.location_on_outlined,
-                                      size: 2.h,
-                                      color: const Color(0xFF8A8A90)),
-                                  SizedBox(width: 2.w),
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        Text(parts.first.trim(),
-                                            style: TextStyle(
-                                                fontSize: 12.5.sp,
-                                                fontWeight: FontWeight.w700,
-                                                color: Colors.black)),
-                                        if (parts.length > 1)
-                                          Text(
-                                              parts
-                                                  .sublist(1)
-                                                  .take(2)
-                                                  .join(',')
-                                                  .trim(),
-                                              maxLines: 1,
-                                              overflow: TextOverflow.ellipsis,
-                                              style: TextStyle(
-                                                  fontSize: 10.5.sp,
-                                                  color: const Color(
-                                                      0xFF9A9AA0))),
-                                      ],
-                                    ),
+                                  Icon(Icons.travel_explore_rounded,
+                                      size: 1.7.h,
+                                      color: const Color(0xFF9A9AA0)),
+                                  SizedBox(width: 1.5.w),
+                                  Text(
+                                    'Точных совпадений в КР нет — похожие места',
+                                    style: TextStyle(
+                                        fontSize: 10.5.sp,
+                                        fontWeight: FontWeight.w600,
+                                        color: const Color(0xFF9A9AA0)),
                                   ),
                                 ],
                               ),
                             ),
-                          );
-                        }).toList(),
+                          ..._searchResults.map((r) {
+                            return InkWell(
+                              onTap: () => _onSearchResultTapped(r),
+                              child: Padding(
+                                padding: EdgeInsets.symmetric(
+                                    horizontal: 4.w, vertical: 1.4.h),
+                                child: Row(
+                                  children: [
+                                    Icon(
+                                        r.similar
+                                            ? Icons.travel_explore_rounded
+                                            : Icons.location_on_outlined,
+                                        size: 2.h,
+                                        color: const Color(0xFF8A8A90)),
+                                    SizedBox(width: 2.w),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Text(r.title,
+                                              style: TextStyle(
+                                                  fontSize: 12.5.sp,
+                                                  fontWeight: FontWeight.w700,
+                                                  color: Colors.black)),
+                                          if (r.subtitle.isNotEmpty)
+                                            Text(
+                                                r.subtitle,
+                                                maxLines: 1,
+                                                overflow:
+                                                    TextOverflow.ellipsis,
+                                                style: TextStyle(
+                                                    fontSize: 10.5.sp,
+                                                    color: const Color(
+                                                        0xFF9A9AA0))),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            );
+                          }),
+                        ],
+                      ),
+                    ),
+                  )
+                else if (_searchFailed && _searchController.text.trim().length >= 2)
+                  Padding(
+                    padding: EdgeInsets.fromLTRB(14.w, 0.5.h, 4.w, 0),
+                    child: Container(
+                      padding: EdgeInsets.symmetric(
+                          horizontal: 4.w, vertical: 1.4.h),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(3.w),
+                        boxShadow: [
+                          BoxShadow(
+                              color: Colors.black.withOpacity(0.08),
+                              blurRadius: 12,
+                              offset: const Offset(0, 4))
+                        ],
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(Icons.info_outline,
+                              size: 2.h, color: const Color(0xFF9A9AA0)),
+                          SizedBox(width: 2.w),
+                          Expanded(
+                            child: Text(
+                              'Ничего не найдено. Попробуйте другой запрос или отметьте точку на карте вручную.',
+                              style: TextStyle(
+                                  fontSize: 11.5.sp,
+                                  color: const Color(0xFF8A8A90)),
+                            ),
+                          ),
+                          GestureDetector(
+                            onTap: () => _searchPlaces(_searchController.text),
+                            child: Text('Повторить',
+                                style: TextStyle(
+                                    fontSize: 11.5.sp,
+                                    fontWeight: FontWeight.w700,
+                                    color: _accent)),
+                          ),
+                        ],
                       ),
                     ),
                   ),
@@ -992,7 +1279,7 @@ class _LocationAddPageState extends State<LocationAddPage>
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: [
-          // City / loading row
+          // City / loading / error row
           Row(
             children: [
               Icon(Icons.place, color: _accent, size: 2.2.h),
@@ -1022,6 +1309,23 @@ class _LocationAddPageState extends State<LocationAddPage>
                             color: Colors.black),
                       ),
               ),
+              if (_geocodeFailed && !_geocoding && _lastFailedPoint != null)
+                GestureDetector(
+                  onTap: () => _reverseGeocode(_lastFailedPoint!),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.refresh_rounded,
+                          size: 1.8.h, color: _accent),
+                      SizedBox(width: 0.8.w),
+                      Text('Повторить',
+                          style: TextStyle(
+                              fontSize: 11.5.sp,
+                              fontWeight: FontWeight.w700,
+                              color: _accent)),
+                    ],
+                  ),
+                ),
             ],
           ),
           SizedBox(height: 1.5.h),
@@ -1072,12 +1376,10 @@ class _LocationAddPageState extends State<LocationAddPage>
           SizedBox(height: 1.h),
           Row(
             children: [
-              // Existing photos
               for (int i = 0; i < _locPhotos.length; i++) ...[
                 _locPhotoThumb(i),
                 SizedBox(width: 2.w),
               ],
-              // Add tile — only if under limit
               if (canAdd)
                 _PressableScale(
                   onTap: _showLocPhotoSheet,

@@ -3,17 +3,31 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:new_app/src/pages/home/models/car.dart';
+import 'package:new_app/src/pages/home/notification/notification_sender.dart';
 
 class CarsProvider extends ChangeNotifier {
   final List<Car> _cars = [];
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  final Map<String, bool> _likedByMe = {};
+
+  // ЕДИНЫЙ источник правды для лайков. Заполняется целиком одним живым
+  // collectionGroup-запросом при логине, а не по одной карточке за раз —
+  // поэтому лайк, поставленный в любом месте приложения (лента, карточка
+  // на Home, страница деталей), мгновенно виден везде через notifyListeners().
+  final Set<String> _likedCarIds = {};
 
   StreamSubscription<QuerySnapshot>? _carsSub;
+  StreamSubscription<QuerySnapshot>? _likedSub;
+  StreamSubscription<User?>? _authSub;
   bool _loading = true;
 
   CarsProvider() {
     _listenToCars();
+    _authSub = FirebaseAuth.instance.authStateChanges().listen((user) {
+      _likedSub?.cancel();
+      _likedCarIds.clear();
+      if (user != null) _listenToLikedCars(user.uid);
+      notifyListeners();
+    });
   }
 
   List<Car> get cars => List.unmodifiable(_cars);
@@ -24,7 +38,22 @@ class CarsProvider extends ChangeNotifier {
 
   List<Car> myCars(String uid) => _cars.where((c) => c.ownerId == uid).toList();
 
-  bool isLikedByMe(String carId) => _likedByMe[carId] ?? false;
+  /// Все лайкнутые мной авто — то, что раньше называлось "Избранное".
+  List<Car> get likedCars =>
+      _cars.where((c) => _likedCarIds.contains(c.id)).toList();
+
+  bool isLikedByMe(String carId) => _likedCarIds.contains(carId);
+
+  /// Находит авто по id среди уже загруженных карточек — используется,
+  /// например, чтобы открыть CarDetailPage из уведомления (лайк/комментарий),
+  /// зная только carId. Возвращает null, если такого авто нет в текущем
+  /// списке (например, было удалено).
+  Car? carById(String carId) {
+    for (final c in _cars) {
+      if (c.id == carId) return c;
+    }
+    return null;
+  }
 
   void _listenToCars() {
     _carsSub = _firestore
@@ -43,9 +72,30 @@ class CarsProvider extends ChangeNotifier {
     });
   }
 
+  /// Живой список ВСЕХ карточек-лайков этого пользователя сразу по всем
+  /// авто — через collectionGroup по 'likedBy'. Требует поле 'uid' внутри
+  /// каждого документа likedBy (пишем его в toggleLike ниже), т.к.
+  /// collectionGroup не умеет фильтровать по id документа напрямую.
+  void _listenToLikedCars(String uid) {
+    _likedSub = _firestore
+        .collectionGroup('likedBy')
+        .where('uid', isEqualTo: uid)
+        .snapshots()
+        .listen((snapshot) {
+      _likedCarIds
+        ..clear()
+        ..addAll(snapshot.docs.map((d) => d.reference.parent.parent!.id));
+      notifyListeners();
+    }, onError: (_) {
+      // офлайн и т.п. — оставляем последнее известное состояние
+    });
+  }
+
   @override
   void dispose() {
     _carsSub?.cancel();
+    _likedSub?.cancel();
+    _authSub?.cancel();
     super.dispose();
   }
 
@@ -63,17 +113,12 @@ class CarsProvider extends ChangeNotifier {
     await carRef.delete();
   }
 
+  /// Больше не обязателен для отображения состояния лайка (это теперь
+  /// делает глобальный listener выше), но оставлен как безобидный no-op
+  /// wrapper, чтобы не ломать существующие вызовы loadLikeState(...) в
+  /// video_page.dart / car_detail_page.dart.
   Future<void> loadLikeState(String carId) async {
-    final uid = FirebaseAuth.instance.currentUser?.uid;
-    if (uid == null) return;
-    final doc = await _firestore
-        .collection('cars')
-        .doc(carId)
-        .collection('likedBy')
-        .doc(uid)
-        .get();
-    _likedByMe[carId] = doc.exists;
-    notifyListeners();
+    // no-op: состояние уже приходит через _listenToLikedCars
   }
 
   Future<void> toggleLike(String carId) async {
@@ -82,9 +127,14 @@ class CarsProvider extends ChangeNotifier {
 
     final carRef = _firestore.collection('cars').doc(carId);
     final likeRef = carRef.collection('likedBy').doc(uid);
-    final currentlyLiked = _likedByMe[carId] ?? false;
+    final currentlyLiked = _likedCarIds.contains(carId);
 
-    _likedByMe[carId] = !currentlyLiked;
+    // Оптимистичное обновление — мгновенно во всех местах приложения.
+    if (currentlyLiked) {
+      _likedCarIds.remove(carId);
+    } else {
+      _likedCarIds.add(carId);
+    }
     notifyListeners();
 
     try {
@@ -92,17 +142,33 @@ class CarsProvider extends ChangeNotifier {
         await likeRef.delete();
         await carRef.update({'likesCount': FieldValue.increment(-1)});
       } else {
-        await likeRef.set({'likedAt': FieldValue.serverTimestamp()});
+        // 'uid' обязателен — по нему работает collectionGroup-запрос выше.
+        await likeRef.set({
+          'uid': uid,
+          'likedAt': FieldValue.serverTimestamp(),
+        });
         await carRef.update({'likesCount': FieldValue.increment(1)});
+
+        // Уведомляем владельца объявления о новом лайке — ТОЛЬКО при
+        // постановке лайка, не при снятии. NotificationSender сам
+        // пропускает случай лайка своего же объявления.
+        final car = carById(carId);
+        NotificationSender.sendLike(
+          toUid: car?.ownerId ?? '',
+          carId: carId,
+          carName: car?.name,
+        );
       }
     } catch (_) {
-      _likedByMe[carId] = currentlyLiked;
+      if (currentlyLiked) {
+        _likedCarIds.add(carId);
+      } else {
+        _likedCarIds.remove(carId);
+      }
       notifyListeners();
     }
   }
 
-  /// [ownerId] — владелец объявления. Если сам автор смотрит своё видео,
-  /// просмотр не засчитывается.
   Future<void> incrementView(String carId, String ownerId) async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid != null && uid == ownerId) return;

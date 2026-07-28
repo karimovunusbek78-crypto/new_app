@@ -5,6 +5,7 @@ import 'package:new_app/src/app/my_app.dart';
 import 'package:new_app/src/pages/saved/provider/saved_cars_provider.dart';
 import 'package:new_app/src/pages/home/providers/cars_provider.dart';
 import 'package:new_app/src/pages/home/providers/subscribtion_provider.dart';
+import 'package:new_app/src/pages/home/notification/notifications_provider.dart';
 import 'package:new_app/src/pages/pages.dart';
 import 'package:new_app/src/video/controller/main_tab_controller.dart';
 import 'package:provider/provider.dart';
@@ -37,6 +38,7 @@ void main() async {
         ),
         ChangeNotifierProvider(create: (_) => SubscriptionsProvider()),
         ChangeNotifierProvider(create: (_) => NavTabController()),
+        ChangeNotifierProvider(create: (_) => NotificationsProvider()),
       ],
       child: const MyApp(),
     ),

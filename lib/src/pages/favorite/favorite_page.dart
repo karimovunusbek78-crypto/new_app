@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:new_app/src/pages/favorite/proget/empty_state.dart';
 import 'package:new_app/src/pages/favorite/proget/favorite_car_card.dart';
-import 'package:new_app/src/pages/favorite/providers/favorites_provider.dart';
+import 'package:new_app/src/pages/home/providers/cars_provider.dart';
 import 'package:provider/provider.dart';
 import 'package:responsive_sizer/responsive_sizer.dart';
 
@@ -24,7 +24,9 @@ class _FavoritePageState extends State<FavoritePage> {
 
   @override
   Widget build(BuildContext context) {
-    final favorites = context.watch<FavoritesProvider>().favorites;
+    // Единый источник правды: лайкнутые авто из CarsProvider, тот же,
+    // что и в видео-ленте, на Home и на странице деталей.
+    final favorites = context.watch<CarsProvider>().likedCars;
 
     final filtered = _query.isEmpty
         ? favorites
@@ -136,42 +138,42 @@ class _FavoritePageState extends State<FavoritePage> {
       body: favorites.isEmpty
           ? const EmptyState()
           : filtered.isEmpty
-          ? Center(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    Icons.search_off_rounded,
-                    size: 6.h,
-                    color: const Color(0xFFAEAEB2),
+              ? Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.search_off_rounded,
+                        size: 6.h,
+                        color: const Color(0xFFAEAEB2),
+                      ),
+                      SizedBox(height: 1.5.h),
+                      Text(
+                        'Ничего не найдено',
+                        style: TextStyle(
+                          fontSize: 15.sp,
+                          fontWeight: FontWeight.w600,
+                          color: const Color(0xFF3C3C43),
+                        ),
+                      ),
+                      SizedBox(height: 0.8.h),
+                      Text(
+                        'Попробуйте другой запрос',
+                        style: TextStyle(
+                          fontSize: 13.sp,
+                          color: const Color(0xFF8E8E93),
+                        ),
+                      ),
+                    ],
                   ),
-                  SizedBox(height: 1.5.h),
-                  Text(
-                    'Ничего не найдено',
-                    style: TextStyle(
-                      fontSize: 15.sp,
-                      fontWeight: FontWeight.w600,
-                      color: const Color(0xFF3C3C43),
-                    ),
-                  ),
-                  SizedBox(height: 0.8.h),
-                  Text(
-                    'Попробуйте другой запрос',
-                    style: TextStyle(
-                      fontSize: 13.sp,
-                      color: const Color(0xFF8E8E93),
-                    ),
-                  ),
-                ],
-              ),
-            )
-          : ListView.separated(
-              padding: EdgeInsets.fromLTRB(4.w, 2.h, 4.w, 4.h),
-              itemCount: filtered.length,
-              separatorBuilder: (_, _) => SizedBox(height: 1.5.h),
-              itemBuilder: (context, index) =>
-                  FavoriteCarCard(car: filtered[index]),
-      ),
+                )
+              : ListView.separated(
+                  padding: EdgeInsets.fromLTRB(4.w, 2.h, 4.w, 4.h),
+                  itemCount: filtered.length,
+                  separatorBuilder: (_, __) => SizedBox(height: 1.5.h),
+                  itemBuilder: (context, index) =>
+                      FavoriteCarCard(car: filtered[index]),
+                ),
     );
   }
 }

@@ -123,16 +123,13 @@ class _CarDetailPageState extends State<CarDetailPage> {
 
   // ---------------------------------------------------------------- actions
 
-  /// Лайк синхронизирован с избранным: лайкнул — авто появляется на
-  /// странице «Избранное», снял лайк — уходит оттуда.
+  /// Лайк — единая точка правды CarsProvider. Раньше здесь ещё вручную
+  /// синхронизировался отдельный FavoritesProvider ("Избранное"), из-за
+  /// чего лайк с этой страницы не всегда совпадал с лайком в видео-ленте
+  /// и на Home. Теперь «Избранное» — это просто CarsProvider.likedCars,
+  /// так что достаточно одного toggleLike.
   void _toggleLike() {
-    final cars = context.read<CarsProvider>();
-    final favs = context.read<FavoritesProvider>();
-    final willLike = !cars.isLikedByMe(widget.car.id);
-    cars.toggleLike(widget.car.id);
-    if (favs.isFavorite(widget.car) != willLike) {
-      favs.toggleFavorite(widget.car);
-    }
+    context.read<CarsProvider>().toggleLike(widget.car.id);
   }
 
   Future<void> _openComments() async {
