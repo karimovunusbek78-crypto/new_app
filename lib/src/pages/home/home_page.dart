@@ -144,17 +144,17 @@ class _MyPublicationsEntryCard extends StatelessWidget {
 /// AutosalonStatsPage._isOwner). Если салона нет — виджет схлопывается
 /// в SizedBox.shrink().
 ///
-/// Отличается от простой карточки-перехода: тёмный акцентный фон,
-/// логотип покрупнее, бейдж «Владелец», и строка с живой статистикой
-/// (кол-во авто, суммарные просмотры и лайки по всем машинам салона) —
-/// считается на лету из коллекции cars по автосалону, а не берётся
-/// только из закешированного carsCount на самом документе салона.
+/// Светлая карточка в стиле остального приложения (белый фон, тонкая
+/// синяя рамка-акцент как у AutosalonCard) — но крупнее и с бейджем
+/// «Владелец», плюс строка с живой статистикой (кол-во авто, суммарные
+/// просмотры и лайки по всем машинам салона), которая считается на
+/// лету из коллекции cars по автосалону.
 class _MyAutosalonEntryCard extends StatelessWidget {
   const _MyAutosalonEntryCard();
 
-  static const _bg = Color(0xFF15130F);
-  static const _accent = Color(0xFFE0A458);
-  static const _grey = Color(0xFFB8B4AC);
+  static const _ink = Color(0xFF1C1C1E);
+  static const _grey = Color(0xFF8E8E93);
+  static const _accent = Color(0xFF3A6FF8);
 
   @override
   Widget build(BuildContext context) {
@@ -190,13 +190,15 @@ class _MyAutosalonEntryCard extends StatelessWidget {
               width: double.infinity,
               padding: EdgeInsets.all(4.5.w),
               decoration: BoxDecoration(
-                color: _bg,
+                color: Colors.white,
                 borderRadius: BorderRadius.circular(5.w),
+                border:
+                    Border.all(color: _accent.withOpacity(0.35), width: 1.4),
                 boxShadow: [
                   BoxShadow(
-                    color: _bg.withOpacity(0.35),
-                    blurRadius: 16,
-                    offset: const Offset(0, 8),
+                    color: Colors.black.withOpacity(0.05),
+                    blurRadius: 12,
+                    offset: const Offset(0, 4),
                   ),
                 ],
               ),
@@ -210,10 +212,8 @@ class _MyAutosalonEntryCard extends StatelessWidget {
                         width: 13.w,
                         height: 13.w,
                         decoration: BoxDecoration(
-                          color: Colors.white.withOpacity(0.08),
+                          color: _accent.withOpacity(0.1),
                           borderRadius: BorderRadius.circular(3.5.w),
-                          border: Border.all(
-                              color: _accent.withOpacity(0.5), width: 1.2),
                           image: hasLogo
                               ? DecorationImage(
                                   image: NetworkImage(logoUrl),
@@ -244,7 +244,7 @@ class _MyAutosalonEntryCard extends StatelessWidget {
                                     style: TextStyle(
                                       fontSize: 15.sp,
                                       fontWeight: FontWeight.w800,
-                                      color: Colors.white,
+                                      color: _ink,
                                     ),
                                   ),
                                 ),
@@ -253,10 +253,9 @@ class _MyAutosalonEntryCard extends StatelessWidget {
                                   padding: EdgeInsets.symmetric(
                                       horizontal: 2.w, vertical: 0.3.h),
                                   decoration: BoxDecoration(
-                                    color: _accent.withOpacity(0.16),
-                                    borderRadius: BorderRadius.circular(1.5.w),
-                                    border: Border.all(
-                                        color: _accent.withOpacity(0.4)),
+                                    color: _accent.withOpacity(0.12),
+                                    borderRadius:
+                                        BorderRadius.circular(1.5.w),
                                   ),
                                   child: Text(
                                     'Владелец',
@@ -276,8 +275,8 @@ class _MyAutosalonEntryCard extends StatelessWidget {
                                   : 'Статистика и репутация вашего салона',
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                  fontSize: 11.sp, color: _grey),
+                              style:
+                                  TextStyle(fontSize: 11.sp, color: _grey),
                             ),
                           ],
                         ),
@@ -287,7 +286,7 @@ class _MyAutosalonEntryCard extends StatelessWidget {
                     ],
                   ),
                   SizedBox(height: 2.2.h),
-                  Container(height: 1, color: Colors.white.withOpacity(0.08)),
+                  Container(height: 1, color: const Color(0xFFF0F0F0)),
                   SizedBox(height: 2.h),
                   // Живая статистика по всем машинам этого автосалона —
                   // считается на лету, чтобы не зависеть от возможного
@@ -304,10 +303,8 @@ class _MyAutosalonEntryCard extends StatelessWidget {
                       int totalLikes = 0;
                       for (final doc in docs) {
                         final d = doc.data();
-                        totalViews +=
-                            (d['viewsCount'] as num?)?.toInt() ?? 0;
-                        totalLikes +=
-                            (d['likesCount'] as num?)?.toInt() ?? 0;
+                        totalViews += (d['viewsCount'] as num?)?.toInt() ?? 0;
+                        totalLikes += (d['likesCount'] as num?)?.toInt() ?? 0;
                       }
                       return Row(
                         children: [
@@ -345,7 +342,7 @@ class _MyAutosalonEntryCard extends StatelessWidget {
     return Container(
       width: 1,
       height: 5.h,
-      color: Colors.white.withOpacity(0.08),
+      color: const Color(0xFFF0F0F0),
     );
   }
 
@@ -367,7 +364,7 @@ class _MyAutosalonEntryCard extends StatelessWidget {
                 style: TextStyle(
                   fontSize: 14.sp,
                   fontWeight: FontWeight.w800,
-                  color: Colors.white,
+                  color: _ink,
                 ),
               ),
             ],
