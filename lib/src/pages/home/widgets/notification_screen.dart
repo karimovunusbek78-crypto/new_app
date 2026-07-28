@@ -195,81 +195,107 @@ class _NotificationScreenState extends State<NotificationScreen>
                           child: child,
                         ),
                       ),
-                      child: Container(
-                        padding: EdgeInsets.all(3.5.w),
-                        decoration: BoxDecoration(
-                          color: n.isRead
-                              ? Colors.white
-                              : const Color(0xFFEEF3FF),
-                          borderRadius: BorderRadius.circular(3.w),
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.black.withOpacity(0.04),
-                              blurRadius: 8,
-                              offset: const Offset(0, 2),
-                            ),
-                          ],
-                        ),
-                        child: Row(
+                      child: ClipRRect(
+                        // Клип нужен, чтобы синяя полоска слева не вылезала
+                        // за скруглённые углы карточки.
+                        borderRadius: BorderRadius.circular(3.w),
+                        child: Stack(
                           children: [
                             Container(
-                              width: 11.w,
-                              height: 11.w,
+                              padding: EdgeInsets.all(3.5.w),
                               decoration: BoxDecoration(
-                                color: _colorFor(n.type).withOpacity(0.12),
-                                shape: BoxShape.circle,
-                              ),
-                              child: Icon(
-                                _iconFor(n.type),
-                                color: _colorFor(n.type),
-                                size: 5.w,
-                              ),
-                            ),
-                            SizedBox(width: 3.w),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Row(
-                                    mainAxisAlignment:
-                                        MainAxisAlignment.spaceBetween,
-                                    children: [
-                                      Text(
-                                        n.title,
-                                        style: TextStyle(
-                                          fontSize: 13.sp,
-                                          fontWeight: FontWeight.w600,
-                                          color: const Color(0xFF1C1C1E),
-                                        ),
-                                      ),
-                                      Text(
-                                        n.time,
-                                        style: TextStyle(
-                                          fontSize: 10.sp,
-                                          color: const Color(0xFF8E8E93),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                  SizedBox(height: 0.4.h),
-                                  Text(
-                                    n.subtitle,
-                                    style: TextStyle(
-                                      fontSize: 12.sp,
-                                      color: const Color(0xFF8E8E93),
-                                    ),
+                                color: n.isRead
+                                    ? Colors.white
+                                    : const Color(0xFFEEF3FF),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black.withOpacity(0.04),
+                                    blurRadius: 8,
+                                    offset: const Offset(0, 2),
                                   ),
                                 ],
                               ),
+                              child: Row(
+                                children: [
+                                  // Небольшой отступ слева под полоску,
+                                  // чтобы контент не наезжал на неё.
+                                  if (!n.isRead) SizedBox(width: 2.5.w),
+                                  Container(
+                                    width: 11.w,
+                                    height: 11.w,
+                                    decoration: BoxDecoration(
+                                      color: _colorFor(n.type)
+                                          .withOpacity(0.12),
+                                      shape: BoxShape.circle,
+                                    ),
+                                    child: Icon(
+                                      _iconFor(n.type),
+                                      color: _colorFor(n.type),
+                                      size: 5.w,
+                                    ),
+                                  ),
+                                  SizedBox(width: 3.w),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Row(
+                                          mainAxisAlignment:
+                                              MainAxisAlignment.spaceBetween,
+                                          children: [
+                                            Text(
+                                              n.title,
+                                              style: TextStyle(
+                                                fontSize: 13.sp,
+                                                fontWeight: FontWeight.w600,
+                                                color:
+                                                    const Color(0xFF1C1C1E),
+                                              ),
+                                            ),
+                                            Text(
+                                              n.time,
+                                              style: TextStyle(
+                                                fontSize: 10.sp,
+                                                color:
+                                                    const Color(0xFF8E8E93),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                        SizedBox(height: 0.4.h),
+                                        Text(
+                                          n.subtitle,
+                                          style: TextStyle(
+                                            fontSize: 12.sp,
+                                            color: const Color(0xFF8E8E93),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  if (!n.isRead)
+                                    Container(
+                                      width: 2.w,
+                                      height: 2.w,
+                                      margin: EdgeInsets.only(left: 2.w),
+                                      decoration: const BoxDecoration(
+                                        color: Color(0xFF3A6FF8),
+                                        shape: BoxShape.circle,
+                                      ),
+                                    ),
+                                ],
+                              ),
                             ),
+                            // ── Синяя полоска слева для непрочитанных ──
                             if (!n.isRead)
-                              Container(
-                                width: 2.w,
-                                height: 2.w,
-                                margin: EdgeInsets.only(left: 2.w),
-                                decoration: const BoxDecoration(
-                                  color: Color(0xFF3A6FF8),
-                                  shape: BoxShape.circle,
+                              Positioned(
+                                left: 0,
+                                top: 0,
+                                bottom: 0,
+                                child: Container(
+                                  width: 1.2.w,
+                                  color: const Color(0xFF3A6FF8),
                                 ),
                               ),
                           ],
