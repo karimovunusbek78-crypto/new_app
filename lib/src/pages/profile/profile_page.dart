@@ -7,7 +7,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:new_app/src/pages/pages.dart';
 import 'package:new_app/src/pages/profile/service/profile_history_service.dart';
 import 'package:new_app/src/pages/favorite/favorite_page.dart';
-import 'package:new_app/src/pages/saved/page/saved_page.dart';
+import 'package:new_app/src/pages/saved/page/saved_car_card.dart';
 import 'package:new_app/src/pages/settings/settings_page.dart';
 import 'package:responsive_sizer/responsive_sizer.dart';
 

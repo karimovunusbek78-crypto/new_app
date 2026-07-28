@@ -30,6 +30,15 @@ class Car {
   final int viewsCount;
   final DateTime? createdAt;  // null пока не пришло из Firestore
 
+  // ── Автосалон ────────────────────────────────────────────────────
+  // Заполняются только для авто, опубликованных через AutoslonPublishPage
+  // (см. cars/{id}.autosalonId и т.д.). Для обычных объявлений частных
+  // продавцов autosalonId == null и isAutosalonCar == false.
+  final String? autosalonId;       // uid автосалона == id документа autosalons/{uid}
+  final String? autosalonName;
+  final String? autosalonLogoUrl;
+  final bool isAutosalonCar;
+
   const Car({
     required this.id,
     required this.name,
@@ -57,6 +66,10 @@ class Car {
     this.likesCount = 0,
     this.viewsCount = 0,
     this.createdAt,
+    this.autosalonId,
+    this.autosalonName,
+    this.autosalonLogoUrl,
+    this.isAutosalonCar = false,
   });
 
   /// Только текст + статы — без photoPaths/videoPath (их пока не грузим).
@@ -86,6 +99,10 @@ class Car {
       'viewsCount': viewsCount,
       'photoPaths': photoPaths,   // ← добавлено (уже будут Storage-URL, не локальные пути)
       'videoPath': videoPath,
+      'autosalonId': autosalonId,
+      'autosalonName': autosalonName,
+      'autosalonLogoUrl': autosalonLogoUrl,
+      'isAutosalonCar': isAutosalonCar,
       'createdAt': FieldValue.serverTimestamp(),
     };
   }
@@ -116,12 +133,32 @@ class Car {
       likesCount: data['likesCount'] ?? 0,
       viewsCount: data['viewsCount'] ?? 0,
       photoPaths: List<String>.from(data['photoPaths'] ?? const []), // ← добавлено
-      videoPath: data['videoPath'] as String?,          
-      createdAt: (data['createdAt'] as Timestamp?)?.toDate(),    
+      videoPath: data['videoPath'] as String?,
+      autosalonId: data['autosalonId'] as String?,
+      autosalonName: data['autosalonName'] as String?,
+      autosalonLogoUrl: data['autosalonLogoUrl'] as String?,
+      isAutosalonCar: data['isAutosalonCar'] as bool? ?? false,
+      createdAt: (data['createdAt'] as Timestamp?)?.toDate(),
     );
   }
 
-  Car copyWith({int? likesCount, int? viewsCount, List<String>? photoPaths, String? videoPath}) {
+  /// Алиас для fromFirestore — используется там, где карточка авто
+  /// строится из уже полученного QueryDocumentSnapshot.data() внутри
+  /// StreamBuilder (например, AutosalonStatsPage._carGridTile), а не
+  /// через сам провайдер.
+  factory Car.fromMap(String id, Map<String, dynamic> data) =>
+      Car.fromFirestore(id, data);
+
+  Car copyWith({
+    int? likesCount,
+    int? viewsCount,
+    List<String>? photoPaths,
+    String? videoPath,
+    String? autosalonId,
+    String? autosalonName,
+    String? autosalonLogoUrl,
+    bool? isAutosalonCar,
+  }) {
     return Car(
       id: id, name: name, year: year, km: km, price: price,
       transmission: transmission, fuelType: fuelType, engineCapacity: engineCapacity,
@@ -132,6 +169,10 @@ class Car {
       contactWhatsapp: contactWhatsapp, contactTelegram: contactTelegram, ownerId: ownerId,
       likesCount: likesCount ?? this.likesCount, viewsCount: viewsCount ?? this.viewsCount,
       createdAt: createdAt,
+      autosalonId: autosalonId ?? this.autosalonId,
+      autosalonName: autosalonName ?? this.autosalonName,
+      autosalonLogoUrl: autosalonLogoUrl ?? this.autosalonLogoUrl,
+      isAutosalonCar: isAutosalonCar ?? this.isAutosalonCar,
     );
   }
 }

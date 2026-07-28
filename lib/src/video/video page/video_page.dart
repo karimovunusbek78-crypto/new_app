@@ -11,6 +11,7 @@ import 'package:new_app/src/pages/saved/provider/saved_cars_provider.dart';
 import 'package:new_app/src/video/controller/main_tab_controller.dart';
 import 'package:new_app/src/video/video%20page/comments/comments_sheet.dart';
 import 'package:new_app/src/video/video%20page/page/video_analytics_page.dart';
+import 'package:new_app/src/video/video%20page/profile/autosalon_stats_page.dart';
 import 'package:new_app/src/video/video%20page/profile/user_stats_page.dart';
 import 'package:new_app/src/video/cache/video_cache.dart';
 import 'package:provider/provider.dart';
@@ -361,19 +362,12 @@ class _VideoReelState extends State<_VideoReel>
   bool _uiHidden = false;
 
   // ── СКОРОСТЬ 2x ПРИ ДОЛГОМ НАЖАТИИ (как в TikTok) ────────────────────
-  // Долгое нажатие: UI прячется + видео играет на 2x. Пока палец зажат,
-  // можно вести его ВЛЕВО — вернётся обычная скорость, ВПРАВО — снова 2x.
-  // Отпустил — всё возвращается как было.
   bool _longPressing = false;
   bool _fast = false;
   double _pressStartDx = 0;
   double _pressStartDy = 0;
 
   // ── ЗАКРЕПЛЁННАЯ 2x ─────────────────────────────────────────────────
-  // Во время долгого нажатия ведёшь палец ВНИЗ — 2x «закрепляется»:
-  // после отпускания видео ПРОДОЛЖАЕТ играть на 2x, UI возвращается,
-  // сверху висит бейдж «2x». Отключить: долгое нажатие + палец ВВЕРХ,
-  // или просто тап по бейджу.
   bool _speedLocked = false;
 
   // Позиция двойного тапа — сердце появляется там, где тапнул
@@ -383,41 +377,33 @@ class _VideoReelState extends State<_VideoReel>
   late final AnimationController _likeAnim;
 
   // ── ПРОГРЕСС/ПЕРЕМОТКА (TikTok-style seek bar) ───────────────────────
-  // Текущая позиция и длительность видео — обновляются через listener
-  // контроллера, троттлятся до ~4 раз/сек, чтобы не дёргать setState
-  // на каждый кадр воспроизведения (это отдельный reel в PageView —
-  // лишняя нагрузка на каждый кадр была бы заметна на свайпах).
   Duration _videoDuration = Duration.zero;
   Duration _videoPosition = Duration.zero;
   DateTime? _lastTickUpdate;
 
-  // Пока пользователь тянет полоску пальцем — реальная позиция видео
-  // не используется для отрисовки прогресса, вместо неё _scrubFraction.
   bool _scrubbing = false;
   double _scrubFraction = 0.0;
   bool _wasPlayingBeforeScrub = false;
-  // Троттлинг живой перемотки контроллера во время drag (см. _seekPreview).
   DateTime? _lastPreviewSeek;
 
   static const _accentBlue = Color(0xFF4DA6FF);
-  // Instagram-style like red.
   static const _likeRed = Color(0xFFFF3040);
-  // Жёлтая закладка «сохранено» (как в TikTok/YouTube).
   static const _saveYellow = Color(0xFFFFD60A);
 
-  // Данные ВЛАДЕЛЬЦА этого объявления (а не текущего пользователя).
-  // Раньше имя/аватар приходили из VideoPage, где грузился профиль
-  // залогиненного юзера — поэтому под чужим видео показывалось ваше имя.
+  // Данные ВЛАДЕЛЬЦА этого объявления.
   String? _ownerName;
   String? _ownerAvatarUrl;
 
-  // ФИКС #2: тяжёлые операции (Firestore-запросы, подписки, инкремент
-  // просмотров) раньше запускались в initState() для КАЖДОГО построенного
-  // reel — включая соседние страницы, которые PageView.builder строит
-  // заранее для плавного свайпа. Это создавало параллельную сетевую
-  // нагрузку одновременно с загрузкой нужного видео и ощущалось как
-  // "долго грузит". Теперь это грузится только когда reel становится
-  // активным, и не повторяется при повторной активации.
+  // ── АВТОСАЛОН: превью для баннера "Все авто автосалона →" ───────────
+  // Грузится один раз, только для активного reel, только если авто
+  // принадлежит автосалону (car.isAutosalonCar). Живёт независимо от
+  // _loadOwner, т.к. источник другой документ (autosalons/{id}).
+  String? _salonName;
+  String? _salonLogoUrl;
+  List<String> _salonPhotoUrls = [];
+  String? _salonVideoUrl;
+  bool _salonLoaded = false;
+
   bool _heavyDataLoaded = false;
 
   Future<void> _loadOwner() async {
@@ -437,15 +423,47 @@ class _VideoReelState extends State<_VideoReel>
     } catch (_) {/* offline / нет документа — покажем инициалы */}
   }
 
+  /// Подгружает профиль автосалона (лого, название, пара фото, видео)
+  /// для баннера в ленте. Не блокирует ничего — если офлайн, баннер
+  /// просто останется без превью-медиа, но сам переход всё равно работает
+  /// (по car.autosalonId).
+  Future<void> _loadSalonPreview() async {
+    final salonId = widget.car.autosalonId;
+    if (salonId == null || salonId.isEmpty || _salonLoaded) return;
+    _salonLoaded = true;
+    try {
+      final doc = await FirebaseFirestore.instance
+          .collection('autosalons')
+          .doc(salonId)
+          .get();
+      final data = doc.data();
+      if (data == null || !mounted) return;
+      final name = (data['name'] as String?)?.trim();
+      setState(() {
+        _salonName = (name != null && name.isNotEmpty)
+            ? name
+            : widget.car.autosalonName;
+        _salonLogoUrl =
+            (data['logoUrl'] as String?) ?? widget.car.autosalonLogoUrl;
+        _salonPhotoUrls = (data['photoUrls'] as List?)
+                ?.whereType<String>()
+                .take(2)
+                .toList() ??
+            const [];
+        _salonVideoUrl = data['videoUrl'] as String?;
+      });
+    } catch (_) {/* offline и т.п. — баннер без превью, ссылка всё равно жива */}
+  }
+
   /// Загружает всё, что нужно только активному reel: профиль владельца,
   /// состояние лайка/подписки, счётчик комментариев, живой savesCount,
-  /// инкремент просмотра.
-  /// Защищено флагом _heavyDataLoaded, чтобы не выполняться повторно.
+  /// инкремент просмотра, и (если авто из автосалона) превью автосалона.
   void _loadHeavyData() {
     if (_heavyDataLoaded) return;
     _heavyDataLoaded = true;
 
     _loadOwner();
+    if (widget.car.isAutosalonCar) _loadSalonPreview();
     context.read<CarsProvider>().loadLikeState(widget.car.id);
     context.read<SubscriptionsProvider>().loadSubscription(widget.car.ownerId);
 
@@ -454,9 +472,6 @@ class _VideoReelState extends State<_VideoReel>
           onError: (_) {/* offline и т.п. — оставляем последнее значение */},
         );
 
-    // РЕАЛЬНЫЙ счётчик сохранений: живой листенер на документ авто —
-    // берём savesCount оттуда. Раньше на кнопке-закладке показывалось
-    // фейковое число из хеша id, теперь только настоящие данные.
     _carDocSub ??= FirebaseFirestore.instance
         .collection('cars')
         .doc(widget.car.id)
@@ -469,8 +484,6 @@ class _VideoReelState extends State<_VideoReel>
       }
     }, onError: (_) {/* offline и т.п. — оставляем последнее значение */});
 
-    // Владелец, смотрящий своё же объявление, просмотр не увеличивает —
-    // это проверяется внутри incrementView.
     context
         .read<CarsProvider>()
         .incrementView(widget.car.id, widget.car.ownerId);
@@ -488,7 +501,6 @@ class _VideoReelState extends State<_VideoReel>
         // не критично — этот комментарий посчитаем без ответов
       }
     }));
-    // Если за время подсчёта стартовал более свежий пересчёт — молчим.
     if (mounted && generation == _recountGeneration) {
       setState(() => _commentsTotal = total);
     }
@@ -502,21 +514,12 @@ class _VideoReelState extends State<_VideoReel>
   }
 
   Future<void> _openComments() async {
-    // ownerId объявления передаётся в шторку комментариев — нужен, чтобы
-    // отметить комментарии владельца бейджем "Автор" и дать ему право
-    // закреплять/удалять любые комментарии (см. comments_sheet.dart).
     await CommentsSheet.show(context, widget.car.id, widget.car.ownerId);
     if (!mounted) return;
-    // КЛАВИАТУРА: после закрытия шторки комментариев жёстко прячем
-    // клавиатуру, чтобы поле ввода из шторки не «вернуло» её на видео.
     _hideKeyboardHard();
-    // Пользователь мог добавить ответы — пересчитываем после закрытия.
     _refreshCommentsCount();
   }
 
-  /// КЕШ: если сетевое видео уже скачано (prefetch со страницы деталей
-  /// или предзагрузка соседних роликов) — играем локальный файл,
-  /// старт мгновенный. Если нет — играем по сети и параллельно кешируем.
   Future<void> _setupVideo() async {
     final path = widget.car.videoPath;
     final isNetwork = path != null && path.startsWith('http');
@@ -545,7 +548,6 @@ class _VideoReelState extends State<_VideoReel>
       if (!mounted) return;
       c.setLooping(true);
       c.setVolume(widget.muted ? 0.0 : 1.0);
-      // Прогресс-бар: фиксируем длительность и подписываемся на позицию.
       _videoDuration = c.value.duration;
       c.addListener(_onControllerTick);
       setState(() => _initialized = true);
@@ -555,11 +557,6 @@ class _VideoReelState extends State<_VideoReel>
     });
   }
 
-  /// Троттленное обновление позиции/длительности для полоски прогресса.
-  /// VideoPlayerController дёргает listener очень часто во время
-  /// проигрывания — здесь ограничиваем setState примерно 4 разами в
-  /// секунду, этого достаточно для плавной полоски, но не создаёт
-  /// лишней нагрузки на каждый кадр.
   void _onControllerTick() {
     if (!mounted || _scrubbing) return;
     final c = _controller;
@@ -597,9 +594,6 @@ class _VideoReelState extends State<_VideoReel>
     _likeAnim = AnimationController(
         vsync: this, duration: const Duration(milliseconds: 850));
 
-    // Видео готовим заранее (даже для неактивного reel) — так соседнее
-    // видео уже готово к моменту свайпа и лента ощущается плавной.
-    // Firestore-запросы и инкремент просмотров — только для активного.
     _setupVideo();
     if (widget.isActive) {
       _loadHeavyData();
@@ -643,9 +637,6 @@ class _VideoReelState extends State<_VideoReel>
     setState(() {});
   }
 
-  /// Лайк в ленте — ТОЛЬКО счётчик/лайк на самом авто (CarsProvider).
-  /// Не трогает ни "Понравившееся" (FavoritesProvider/users/{uid}/favorites),
-  /// ни "Избранное" (SavedCarsProvider/users/{uid}/savedCars).
   void _toggleLike() {
     context.read<CarsProvider>().toggleLike(widget.car.id);
   }
@@ -665,15 +656,10 @@ class _VideoReelState extends State<_VideoReel>
       MaterialPageRoute(builder: (_) => CarDetailPage(car: widget.car)),
     );
     if (!mounted) return;
-    // КЛАВИАТУРА (баг-фикс): при возврате со страницы деталей Flutter мог
-    // восстановить фокус текстового поля и клавиатура всплывала сама.
-    // Жёстко прячем её и повторяем на следующем кадре.
     _hideKeyboardHard();
     _syncPlayback();
   }
 
-  /// Тап по аватару/имени автора → публичная страница автора:
-  /// его публикации + общая статистика.
   Future<void> _openProfile() async {
     _hideKeyboardHard();
     _controller?.pause();
@@ -687,14 +673,28 @@ class _VideoReelState extends State<_VideoReel>
     _syncPlayback();
   }
 
-  /// «Аналитика» на СВОЁМ видео → аналитика ИМЕННО ЭТОГО видео:
-  /// кто лайкнул, кто смотрел, когда опубликовано, просмотры за сегодня.
   Future<void> _openVideoAnalytics() async {
     _hideKeyboardHard();
     _controller?.pause();
     await Navigator.push(
       context,
       MaterialPageRoute(builder: (_) => VideoAnalyticsPage(car: widget.car)),
+    );
+    if (!mounted) return;
+    _hideKeyboardHard();
+    _syncPlayback();
+  }
+
+  /// Тап по баннеру автосалона → публичная страница автосалона:
+  /// его локации, фото/видео, все автомобили.
+  Future<void> _openAutosalon() async {
+    final salonId = widget.car.autosalonId;
+    if (salonId == null || salonId.isEmpty) return;
+    _hideKeyboardHard();
+    _controller?.pause();
+    await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => AutosalonStatsPage(salonId: salonId)),
     );
     if (!mounted) return;
     _hideKeyboardHard();
@@ -722,8 +722,6 @@ class _VideoReelState extends State<_VideoReel>
     final dx = d.localPosition.dx - _pressStartDx;
     final dy = d.localPosition.dy - _pressStartDy;
 
-    // ВНИЗ более чем на 60px — закрепляем 2x (останется после отпускания).
-    // ВВЕРХ более чем на 60px — снимаем закрепление.
     if (!_speedLocked && dy > 60) {
       _speedLocked = true;
       HapticFeedback.mediumImpact();
@@ -736,10 +734,8 @@ class _VideoReelState extends State<_VideoReel>
       _applySpeed(false);
       return;
     }
-    if (_speedLocked) return; // закреплено — горизонталь не трогаем
+    if (_speedLocked) return;
 
-    // Увёл палец влево более чем на 50px — обычная скорость.
-    // Вернул вправо — снова 2x. Гистерезис, чтобы не дёргалось на границе.
     if (_fast && dx < -50) {
       _applySpeed(false);
     } else if (!_fast && dx > -20) {
@@ -754,8 +750,6 @@ class _VideoReelState extends State<_VideoReel>
   }
 
   void _onLongPressFinish() {
-    // Если 2x закреплена свайпом вниз — НЕ сбрасываем скорость:
-    // видео продолжает играть на 2x с бейджем сверху.
     if (!_speedLocked) {
       if (_hasVideo && _initialized) _controller?.setPlaybackSpeed(1.0);
       _fast = false;
@@ -768,7 +762,6 @@ class _VideoReelState extends State<_VideoReel>
     }
   }
 
-  /// Снять закреплённую 2x (тап по бейджу).
   void _unlockSpeed() {
     if (!_speedLocked) return;
     _speedLocked = false;
@@ -777,16 +770,6 @@ class _VideoReelState extends State<_VideoReel>
   }
 
   // ------------------------------------------------- seek bar (scrub)
-  //
-  // Полоска прогресса внизу ролика. Отдельный GestureDetector слушает
-  // горизонтальный drag И обычный тап — раньше слушался ТОЛЬКО drag,
-  // из-за чего простой тап по этой полоске ничего не делал, но
-  // событие всё равно "съедалось" ею (она лежит самым верхним слоем
-  // Stack и имеет HitTestBehavior.opaque) и не долетало до общего
-  // GestureDetector с play/pause — именно поэтому пауза иногда как
-  // будто не срабатывала, если палец попадал в эту полосу снизу экрана.
-  // Теперь тап по полоске имеет собственное осмысленное действие —
-  // мгновенная перемотка в это место.
 
   void _onScrubStart(DragStartDetails details, double barWidth) {
     _wasPlayingBeforeScrub = _controller?.value.isPlaying ?? false;
@@ -808,10 +791,6 @@ class _VideoReelState extends State<_VideoReel>
     _seekPreview(fraction);
   }
 
-  /// Перематывает КОНТРОЛЛЕР по факту (с троттлингом ~90мс), пока
-  /// пользователь тянет полоску — благодаря этому карточка-превью
-  /// показывает настоящий кадр видео в этот момент времени, а не
-  /// статичное фото объявления.
   void _seekPreview(double fraction) {
     final c = _controller;
     final duration = _videoDuration;
@@ -846,8 +825,6 @@ class _VideoReelState extends State<_VideoReel>
     if (mounted) setState(() => _scrubbing = false);
   }
 
-  /// Обычный тап (без протягивания) по полоске — сразу перематывает
-  /// видео в то место, куда тапнули.
   Future<void> _onSeekTap(TapUpDetails details, double barWidth) async {
     final c = _controller;
     final duration = _videoDuration;
@@ -861,16 +838,12 @@ class _VideoReelState extends State<_VideoReel>
     }
   }
 
-  // ----- РЕАЛЬНЫЙ счётчик сохранений (savesCount с документа авто) -----
-  // Живой листенер запускается в _loadHeavyData (только для активного
-  // reel). Раньше здесь было фейковое число _saveBase из хеша id — удалено.
   int _savesCount = 0;
   StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _carDocSub;
 
-  // ----- Счётчик комментариев (комментарии + все ответы) -----
   int _commentsTotal = 0;
   StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _commentsSub;
-  int _recountGeneration = 0; // защита от гонки старых/новых пересчётов
+  int _recountGeneration = 0;
 
   CollectionReference<Map<String, dynamic>> get _commentsRef =>
       FirebaseFirestore.instance
@@ -901,11 +874,8 @@ class _VideoReelState extends State<_VideoReel>
 
         _likeBurst(),
 
-        // Индикатор скорости при долгом нажатии (2x / обычная + подсказка).
         if (_longPressing && _hasVideo && _initialized) _speedOverlay(),
 
-        // Закреплённая 2x: палец отпущен, UI виден, видео играет на 2x.
-        // Бейдж сверху — тап по нему выключает.
         if (_speedLocked && !_longPressing && _hasVideo && _initialized)
           _lockedSpeedBadge(),
 
@@ -916,9 +886,6 @@ class _VideoReelState extends State<_VideoReel>
             duration: const Duration(milliseconds: 200),
             child: SafeArea(
               child: Padding(
-                // Правый отступ уменьшен — панель лайков/комментариев
-                // теперь ближе к правому краю экрана, освобождая больше
-                // места самому видео.
                 padding: EdgeInsets.only(left: 4.w, right: 2.2.w),
                 child: Column(
                   children: [
@@ -940,9 +907,6 @@ class _VideoReelState extends State<_VideoReel>
           ),
         ),
 
-        // Полоска прогресса + перемотка — самый верхний слой Stack,
-        // чтобы горизонтальный drag в нижней полосе экрана долетал именно
-        // до неё, а не терялся среди остальных виджетов.
         _seekBar(),
       ],
     );
@@ -967,9 +931,6 @@ class _VideoReelState extends State<_VideoReel>
             child:
                 CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
           ),
-        // Градиент затемнения СНИЗУ/СВЕРХУ облегчён — видео должно
-        // читаться максимально хорошо, UI лишь слегка подсвечен снизу,
-        // чтобы текст/иконки оставались читаемыми на любом фоне.
         AnimatedOpacity(
           opacity: _uiHidden ? 0.0 : 1.0,
           duration: const Duration(milliseconds: 200),
@@ -1031,15 +992,6 @@ class _VideoReelState extends State<_VideoReel>
     );
   }
 
-  // Сердце появляется в точке двойного тапа, а не по центру экрана.
-  //
-  // ВАЖНО: Positioned должен быть ПРЯМЫМ потомком Stack в дереве рендера.
-  // Раньше IgnorePointer оборачивал AnimatedBuilder СНАРУЖИ, и Positioned
-  // оказывался внутри поддерева IgnorePointer, а не сразу под Stack —
-  // это и вызывало "Incorrect use of ParentDataWidget". Теперь AnimatedBuilder
-  // возвращает Positioned напрямую (он — прямой child Stack), а IgnorePointer
-  // просто оборачивает содержимое ВНУТРИ Positioned, чтобы сердце
-  // по-прежнему не перехватывало тапы.
   Widget _likeBurst() {
     return AnimatedBuilder(
       animation: _likeAnim,
@@ -1073,8 +1025,6 @@ class _VideoReelState extends State<_VideoReel>
     );
   }
 
-  /// Индикатор при долгом нажатии: сверху бейдж «2x» (или «Обычная»)
-  /// и подсказка, куда вести палец, чтобы сменить скорость.
   Widget _speedOverlay() {
     return Positioned(
       top: 0,
@@ -1142,9 +1092,6 @@ class _VideoReelState extends State<_VideoReel>
     );
   }
 
-  /// Бейдж закреплённой 2x: висит сверху, пока скорость закреплена.
-  /// Виден вместе со всем остальным UI (лайки, комментарии и т.д.).
-  /// Тап по бейджу — выключить и вернуться к обычной скорости.
   Widget _lockedSpeedBadge() {
     return Positioned(
       top: 0,
@@ -1205,12 +1152,6 @@ class _VideoReelState extends State<_VideoReel>
     );
   }
 
-  /// Полоска прогресса видео внизу ролика (TikTok-style): тонкая линия,
-  /// которую можно тянуть пальцем влево/вправо, чтобы перемотать видео,
-  /// либо просто тапнуть в нужное место для мгновенного перехода.
-  /// Пока не активна перемотка — справа виден таймкод "элапсед / общая
-  /// длительность". Во время перетаскивания над полоской всплывает
-  /// карточка-превью с реальным кадром видео на этой позиции.
   Widget _seekBar() {
     if (!_hasVideo || !_initialized) return const SizedBox.shrink();
     final duration = _videoDuration;
@@ -1244,15 +1185,11 @@ class _VideoReelState extends State<_VideoReel>
                 onHorizontalDragCancel: _onScrubCancel,
                 child: Container(
                   color: Colors.transparent,
-                  // Область захвата пальцем выше самой линии — так легче
-                  // попасть по полоске, не целясь точно в 2 пикселя.
                   height: 2.6.h,
                   child: Stack(
                     clipBehavior: Clip.none,
                     alignment: Alignment.bottomLeft,
                     children: [
-                      // фон-дорожка — сделана заметнее (толще и контрастнее),
-                      // чтобы прогресс было видно даже на светлом видео.
                       Positioned(
                         left: 0,
                         right: 0,
@@ -1262,8 +1199,6 @@ class _VideoReelState extends State<_VideoReel>
                           color: Colors.white.withOpacity(0.35),
                         ),
                       ),
-                      // заполненная часть — лёгкое акцентное свечение,
-                      // чтобы прогресс выделялся на любом фоне видео.
                       Positioned(
                         left: 0,
                         bottom: 0,
@@ -1282,8 +1217,6 @@ class _VideoReelState extends State<_VideoReel>
                           ),
                         ),
                       ),
-                      // ползунок — виден только во время перетаскивания,
-                      // чуть крупнее и с акцентной обводкой для видимости.
                       if (_scrubbing)
                         Positioned(
                           left: (barWidth * progress - 6.5)
@@ -1306,8 +1239,6 @@ class _VideoReelState extends State<_VideoReel>
                             ),
                           ),
                         ),
-                      // карточка-превью с реальным кадром видео на позиции
-                      // перемотки
                       if (_scrubbing)
                         Positioned(
                           left: (barWidth * progress - 13.w)
@@ -1315,8 +1246,6 @@ class _VideoReelState extends State<_VideoReel>
                           bottom: 3.6.h,
                           child: _scrubPreviewCard(),
                         ),
-                      // таймкод элапсед/общая длительность — виден
-                      // всегда, пока UI не скрыт и перемотка не активна
                       if (!_scrubbing)
                         Positioned(
                           right: 2.w,
@@ -1344,12 +1273,6 @@ class _VideoReelState extends State<_VideoReel>
     );
   }
 
-  /// Карточка-превью над полоской прогресса — показывает НАСТОЯЩИЙ кадр
-  /// видео (не фото объявления) на текущей позиции перемотки: контроллер
-  /// уже перемотан туда через _seekPreview, пока палец тянет полоску.
-  /// Соотношение сторон берётся у самого видео (портретное, как в
-  /// ленте), а не зашито жёстко альбомным 16:10, как раньше — из-за
-  /// этого превью выглядело как обрезанный квадрат.
   Widget _scrubPreviewCard() {
     final target = _videoDuration * _scrubFraction;
     final c = _controller;
@@ -1359,8 +1282,6 @@ class _VideoReelState extends State<_VideoReel>
             : 9 / 16;
     return Container(
       width: 26.w,
-      // Небольшой отступ от полоски и краёв экрана — раньше карточка
-      // была впритык, теперь просторнее.
       margin: EdgeInsets.only(bottom: 0.4.h),
       padding: EdgeInsets.all(1.2.w),
       decoration: BoxDecoration(
@@ -1412,8 +1333,6 @@ class _VideoReelState extends State<_VideoReel>
         SizedBox(width: 3.w),
         _iconBtn(
           Icons.search,
-          // Переключаем таб на "Поиск", а не push — тогда SearchPage
-          // открывается внутри MainNavBar и нижняя навигация остаётся видна.
           () => context.read<NavTabController>().setIndex(1),
         ),
         SizedBox(width: 3.w),
@@ -1448,12 +1367,17 @@ class _VideoReelState extends State<_VideoReel>
             _actionRail(car),
           ],
         ),
-        // Отступ до карточки уменьшен — вместе с компактной карточкой
-        // нижний блок стал заметно ниже, видео видно больше.
         SizedBox(height: 1.h),
         Padding(
           padding: EdgeInsets.only(right: 1.8.w),
-          child: _infoCard(car),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // Баннер автосалона — виден только если car.isAutosalonCar.
+              _autosalonBanner(),
+              _infoCard(car),
+            ],
+          ),
         ),
       ],
     );
@@ -1535,8 +1459,6 @@ class _VideoReelState extends State<_VideoReel>
     );
   }
 
-  // КОМПАКТНОСТЬ: аватар, имя и кнопка уменьшены, чтобы блок автора
-  // перекрывал меньше видео (было: аватар 9.w, имя 14, кнопки крупнее).
   Widget _creatorRow(Car car) {
     final name = (_ownerName != null && _ownerName!.isNotEmpty)
         ? _ownerName!
@@ -1553,8 +1475,6 @@ class _VideoReelState extends State<_VideoReel>
 
     return Row(
       children: [
-        // Тап по аватару/имени открывает страницу автора:
-        // его публикации + общая статистика.
         GestureDetector(
           onTap: _openProfile,
           behavior: HitTestBehavior.opaque,
@@ -1607,9 +1527,6 @@ class _VideoReelState extends State<_VideoReel>
         ),
         SizedBox(width: 2.w),
         if (isMyOwnCar)
-          // СВОЁ видео: вместо «Подписаться» — кнопка «Аналитика»,
-          // которая открывает аналитику ИМЕННО ЭТОГО видео
-          // (кто лайкнул, кто смотрел, когда опубликовано).
           GestureDetector(
             onTap: _openVideoAnalytics,
             child: Container(
@@ -1666,10 +1583,6 @@ class _VideoReelState extends State<_VideoReel>
     );
   }
 
-  // ── ACTION RAIL — Instagram Reels-style: тонкие иконки (кроме сердца),
-  // без нижней миниатюры-«кружка», ближе к правому краю. Иконки увеличены
-  // ещё немного (было 2.9-3.0.h, стало 3.3-3.4.h), подписи 11px,
-  // отступы между кнопками чуть больше.
   Widget _actionRail(Car car) {
     final cars = context.watch<CarsProvider>();
     final liked = cars.isLikedByMe(car.id);
@@ -1701,10 +1614,6 @@ class _VideoReelState extends State<_VideoReel>
           iconSize: 3.3.h,
         ),
         SizedBox(height: 1.6.h),
-        // "Избранное" — сохраняет авто в SavedCarsProvider
-        // (users/{uid}/savedCars). Не связано с лайком/подпиской.
-        // Число — РЕАЛЬНЫЙ savesCount с документа авто (живой листенер
-        // в _loadHeavyData). Жёлтая закладка = сохранено.
         _railButton(
           icon: saved ? Icons.bookmark_rounded : Icons.bookmark_border_rounded,
           color: saved ? _saveYellow : Colors.white,
@@ -1750,18 +1659,142 @@ class _VideoReelState extends State<_VideoReel>
     );
   }
 
-  /// КОМПАКТНАЯ карточка авто (примерно в 2 раза ниже прежней):
-  /// одна строка — мини-фото, название + цена и краткие статы
-  /// «год · пробег · просмотры» вместо высокой карточки с отдельным
-  /// блоком статистики. Видео перекрывается заметно меньше.
-  /// Тап — страница деталей авто (как раньше).
-  ///
-  /// ПРОИЗВОДИТЕЛЬНОСТЬ: BackdropFilter с большим sigma — один из самых
-  /// дорогих виджетов Flutter (полный GPU-блюр всего экрана каждый кадр).
-  /// Во время свайпа между роликами это конкурирует за бюджет кадра и
-  /// ощущается как рывки. Sigma снижена с 18 до 8 — визуально всё ещё
-  /// "матовое стекло", но заметно дешевле для GPU, особенно на бюджетных
-  /// Android-устройствах.
+  /// Баннер автосалона: логотип/название + мини-превью его фото/видео
+  /// + «Все авто →» → AutosalonStatsPage. Виден только для авто, у
+  /// которых car.isAutosalonCar == true и есть car.autosalonId.
+  Widget _autosalonBanner() {
+    final car = widget.car;
+    if (!car.isAutosalonCar ||
+        car.autosalonId == null ||
+        car.autosalonId!.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    final name = (_salonName != null && _salonName!.isNotEmpty)
+        ? _salonName!
+        : (car.autosalonName ?? 'Автосалон');
+    final logo = _salonLogoUrl ?? car.autosalonLogoUrl;
+    final hasLogo = logo != null && logo.isNotEmpty;
+    final mediaCount =
+        _salonPhotoUrls.length + (_salonVideoUrl != null ? 1 : 0);
+
+    return Padding(
+      padding: EdgeInsets.only(bottom: 1.2.h),
+      child: GestureDetector(
+        onTap: _openAutosalon,
+        child: Container(
+          padding: EdgeInsets.symmetric(horizontal: 3.w, vertical: 1.1.h),
+          decoration: BoxDecoration(
+            color: Colors.white.withOpacity(0.14),
+            borderRadius: BorderRadius.circular(3.5.w),
+            border: Border.all(color: Colors.white.withOpacity(0.22)),
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 8.w,
+                height: 8.w,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: Colors.white.withOpacity(0.15),
+                  image: hasLogo
+                      ? DecorationImage(
+                          image: NetworkImage(logo), fit: BoxFit.cover)
+                      : null,
+                ),
+                child: hasLogo
+                    ? null
+                    : Icon(Icons.storefront_outlined,
+                        color: Colors.white, size: 2.2.h),
+              ),
+              SizedBox(width: 2.5.w),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      'Автосалон',
+                      style: TextStyle(
+                        color: Colors.white.withOpacity(0.7),
+                        fontSize: 9.5.sp,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    Text(
+                      name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 12.sp,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (mediaCount > 0) ...[
+                SizedBox(
+                  width: mediaCount * 4.2.w + 2.w,
+                  height: 6.w,
+                  child: Stack(
+                    children: [
+                      for (var i = 0; i < _salonPhotoUrls.length; i++)
+                        Positioned(
+                          left: i * 4.2.w,
+                          child: _salonMiniThumb(image: _salonPhotoUrls[i]),
+                        ),
+                      if (_salonVideoUrl != null)
+                        Positioned(
+                          left: _salonPhotoUrls.length * 4.2.w,
+                          child: _salonMiniThumb(isVideo: true),
+                        ),
+                    ],
+                  ),
+                ),
+                SizedBox(width: 1.5.w),
+              ],
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    'Все авто',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 10.5.sp,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  Icon(Icons.chevron_right_rounded,
+                      color: Colors.white, size: 2.h),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _salonMiniThumb({String? image, bool isVideo = false}) {
+    return Container(
+      width: 6.w,
+      height: 6.w,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        border: Border.all(color: Colors.black.withOpacity(0.6), width: 1.5),
+        color: Colors.white.withOpacity(0.2),
+        image: image != null
+            ? DecorationImage(image: NetworkImage(image), fit: BoxFit.cover)
+            : null,
+      ),
+      child: isVideo
+          ? const Icon(Icons.play_arrow_rounded, color: Colors.white, size: 14)
+          : null,
+    );
+  }
+
   Widget _infoCard(Car car) {
     return GestureDetector(
       onTap: _openDetail,
@@ -1835,7 +1868,6 @@ class _VideoReelState extends State<_VideoReel>
     );
   }
 
-  /// «Год · пробег · просмотры» одной строкой для компактной карточки.
   String _cardStatsLine(Car car) {
     final p = <String>[];
     if (car.year.trim().isNotEmpty) p.add('${car.year.trim()} г.');
@@ -1902,7 +1934,6 @@ class _VideoReelState extends State<_VideoReel>
     return '$n';
   }
 
-  /// Форматирует Duration в "m:ss" (например "1:07"), как в TikTok/YouTube.
   String _fmtDuration(Duration d) {
     if (d.isNegative) return '0:00';
     final totalSeconds = d.inSeconds;
