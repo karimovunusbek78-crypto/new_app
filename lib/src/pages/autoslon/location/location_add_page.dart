@@ -454,7 +454,7 @@ class _LocationAddPageState extends State<LocationAddPage>
         }
       }
 
-      // ignore: dead_code
+      // ignore: unnecessary_null_comparison, dead_code
       if (pos == null) {
         _showLocationError('Не удалось определить местоположение.');
         return;
