@@ -70,7 +70,8 @@ class CarsProvider extends ChangeNotifier {
   Future<void> loadLikeState(String carId) async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
-    final doc = await _firestore
+    final doc = 
+    await _firestore
         .collection('cars')
         .doc(carId)
         .collection('likedBy')

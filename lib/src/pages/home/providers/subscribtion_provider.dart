@@ -31,7 +31,6 @@ class SubscriptionsProvider extends ChangeNotifier {
     final targetUserRef = _firestore.collection('users').doc(targetUid);
     final wasSubscribed = _subscribedTo.contains(targetUid);
 
-    // Оптимистичное обновление
     wasSubscribed ? _subscribedTo.remove(targetUid) : _subscribedTo.add(targetUid);
     notifyListeners();
 

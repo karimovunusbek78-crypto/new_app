@@ -21,6 +21,12 @@ class _HomeHeaderState extends State<HomeHeader>
   late AnimationController _controller;
   late Animation<double> _shakeAnimation;
 
+  // Защита от множественных тапов по колокольчику: без неё каждый тап
+  // (в том числе за то время, пока ждёт Future.delayed) добавлял в стек
+  // ещё одну копию NotificationScreen, и один pop закрывал только
+  // верхнюю — казалось, что "не могу выйти с одного раза".
+  bool _isOpeningNotifications = false;
+
   @override
   void initState() {
     super.initState();
@@ -44,14 +50,20 @@ class _HomeHeaderState extends State<HomeHeader>
   }
 
   void _onTap() {
+    // Уже открываем экран уведомлений — игнорируем повторные тапы,
+    // пока навигация не завершится (см. сброс флага ниже).
+    if (_isOpeningNotifications) return;
+    _isOpeningNotifications = true;
+
     _controller.forward(from: 0);
     Future.delayed(const Duration(milliseconds: 300), () {
+      if (!mounted) return;
       Navigator.push(
         context,
         PageRouteBuilder(
           transitionDuration: const Duration(milliseconds: 350),
-          pageBuilder: (_, _, _) => const NotificationScreen(),
-          transitionsBuilder: (_, animation, _, child) {
+          pageBuilder: (_, __, ___) => const NotificationScreen(),
+          transitionsBuilder: (_, animation, __, child) {
             return SlideTransition(
               position:
                   Tween<Offset>(
@@ -64,7 +76,14 @@ class _HomeHeaderState extends State<HomeHeader>
             );
           },
         ),
-      );
+      ).then((_) {
+        // Экран уведомлений закрылся — снова разрешаем открыть его.
+        if (mounted) {
+          setState(() => _isOpeningNotifications = false);
+        } else {
+          _isOpeningNotifications = false;
+        }
+      });
     });
   }
 

@@ -32,6 +32,17 @@ class _NotificationScreenState extends State<NotificationScreen>
   late Animation<Offset> _slideAnimation;
   late Animation<double> _fadeAnimation;
 
+  // Защита от случайного двойного/тройного нажатия на кнопку "назад" —
+  // без неё несколько быстрых тапов могут вызвать Navigator.pop()
+  // несколько раз и закрыть сразу 2-3 экрана вместо одного.
+  bool _isClosing = false;
+
+  void _handleBack() {
+    if (_isClosing) return;
+    _isClosing = true;
+    Navigator.pop(context);
+  }
+
   // Тестовые данные — замени на свои реальные
   final List<NotificationItem> notifications = const [
     NotificationItem(
@@ -80,7 +91,10 @@ class _NotificationScreenState extends State<NotificationScreen>
       begin: const Offset(0, 0.08),
       end: Offset.zero,
     ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeOut));
-    _fadeAnimation = CurvedAnimation(parent: _controller, curve: Curves.easeOut);
+    _fadeAnimation = CurvedAnimation(
+      parent: _controller,
+      curve: Curves.easeOut,
+    );
     _controller.forward();
   }
 
@@ -118,192 +132,209 @@ class _NotificationScreenState extends State<NotificationScreen>
       opacity: _fadeAnimation,
       child: SlideTransition(
         position: _slideAnimation,
-        child: Scaffold(
-          backgroundColor: const Color(0xFFF2F2F7),
-          appBar: AppBar(
+        child: PopScope(
+          // Дополнительная защита: если пользователь несколько раз
+          // подряд свайпнёт/нажмёт системную кнопку "назад" (Android),
+          // тоже не даём вызвать pop повторно.
+          canPop: !_isClosing,
+          child: Scaffold(
             backgroundColor: const Color(0xFFF2F2F7),
-            elevation: 0,
-            leading: GestureDetector(
-              onTap: () => Navigator.pop(context),
-              child: Container(
-                margin: EdgeInsets.all(2.w),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  shape: BoxShape.circle,
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.06),
-                      blurRadius: 8,
-                    ),
-                  ],
-                ),
-                child: const Icon(Icons.arrow_back_ios_new,
-                    color: Color(0xFF1C1C1E), size: 18),
-              ),
-            ),
-            title: Text(
-              'Уведомления',
-              style: TextStyle(
-                color: const Color(0xFF1C1C1E),
-                fontSize: 18.sp,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () {},
-                child: Text(
-                  'Очистить',
-                  style: TextStyle(
-                    color: const Color(0xFF3A6FF8),
-                    fontSize: 13.sp,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          body: notifications.isEmpty
-              ? Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(Icons.notifications_off_outlined,
-                          size: 15.w, color: Colors.black26),
-                      SizedBox(height: 2.h),
-                      Text(
-                        'Нет уведомлений',
-                        style: TextStyle(
-                            color: Colors.black38, fontSize: 14.sp),
+            appBar: AppBar(
+              backgroundColor: const Color(0xFFF2F2F7),
+              elevation: 0,
+              leading: GestureDetector(
+                onTap: _handleBack,
+                child: Container(
+                  margin: EdgeInsets.all(2.w),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    shape: BoxShape.circle,
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.06),
+                        blurRadius: 8,
                       ),
                     ],
                   ),
-                )
-              : ListView.separated(
-                  padding: EdgeInsets.all(4.w),
-                  itemCount: notifications.length,
-                  separatorBuilder: (_, __) => SizedBox(height: 1.5.h),
-                  itemBuilder: (_, i) {
-                    final n = notifications[i];
-                    return TweenAnimationBuilder<double>(
-                      tween: Tween(begin: 0, end: 1),
-                      duration: Duration(milliseconds: 300 + i * 60),
-                      curve: Curves.easeOut,
-                      builder: (context, val, child) => Opacity(
-                        opacity: val,
-                        child: Transform.translate(
-                          offset: Offset(0, 20 * (1 - val)),
-                          child: child,
+                  child: const Icon(
+                    Icons.arrow_back_ios_new,
+                    color: Color(0xFF1C1C1E),
+                    size: 18,
+                  ),
+                ),
+              ),
+              title: Text(
+                'Уведомления',
+                style: TextStyle(
+                  color: const Color(0xFF1C1C1E),
+                  fontSize: 18.sp,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () {},
+                  child: Text(
+                    'Очистить',
+                    style: TextStyle(
+                      color: const Color(0xFF3A6FF8),
+                      fontSize: 13.sp,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            body: notifications.isEmpty
+                ? Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          Icons.notifications_off_outlined,
+                          size: 15.w,
+                          color: Colors.black26,
                         ),
-                      ),
-                      child: ClipRRect(
-                        // Клип нужен, чтобы синяя полоска слева не вылезала
-                        // за скруглённые углы карточки.
-                        borderRadius: BorderRadius.circular(3.w),
-                        child: Stack(
-                          children: [
-                            Container(
-                              padding: EdgeInsets.all(3.5.w),
-                              decoration: BoxDecoration(
-                                color: n.isRead
-                                    ? Colors.white
-                                    : const Color(0xFFEEF3FF),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: Colors.black.withOpacity(0.04),
-                                    blurRadius: 8,
-                                    offset: const Offset(0, 2),
-                                  ),
-                                ],
-                              ),
-                              child: Row(
-                                children: [
-                                  // Небольшой отступ слева под полоску,
-                                  // чтобы контент не наезжал на неё.
-                                  if (!n.isRead) SizedBox(width: 2.5.w),
-                                  Container(
-                                    width: 11.w,
-                                    height: 11.w,
-                                    decoration: BoxDecoration(
-                                      color: _colorFor(n.type)
-                                          .withOpacity(0.12),
-                                      shape: BoxShape.circle,
+                        SizedBox(height: 2.h),
+                        Text(
+                          'Нет уведомлений',
+                          style: TextStyle(
+                            color: Colors.black38,
+                            fontSize: 14.sp,
+                          ),
+                        ),
+                      ],
+                    ),
+                  )
+                : ListView.separated(
+                    padding: EdgeInsets.all(4.w),
+                    itemCount: notifications.length,
+                    separatorBuilder: (_, _) => SizedBox(height: 1.5.h),
+                    itemBuilder: (_, i) {
+                      final n = notifications[i];
+                      return TweenAnimationBuilder<double>(
+                        tween: Tween(begin: 0, end: 1),
+                        duration: Duration(milliseconds: 300 + i * 60),
+                        curve: Curves.easeOut,
+                        builder: (context, val, child) => Opacity(
+                          opacity: val,
+                          child: Transform.translate(
+                            offset: Offset(0, 20 * (1 - val)),
+                            child: child,
+                          ),
+                        ),
+                        child: ClipRRect(
+                          // Клип нужен, чтобы синяя полоска слева не вылезала
+                          // за скруглённые углы карточки.
+                          borderRadius: BorderRadius.circular(3.w),
+                          child: Stack(
+                            children: [
+                              Container(
+                                padding: EdgeInsets.all(3.5.w),
+                                decoration: BoxDecoration(
+                                  color: n.isRead
+                                      ? Colors.white
+                                      : const Color(0xFFEEF3FF),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: Colors.black.withOpacity(0.04),
+                                      blurRadius: 8,
+                                      offset: const Offset(0, 2),
                                     ),
-                                    child: Icon(
-                                      _iconFor(n.type),
-                                      color: _colorFor(n.type),
-                                      size: 5.w,
-                                    ),
-                                  ),
-                                  SizedBox(width: 3.w),
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        Row(
-                                          mainAxisAlignment:
-                                              MainAxisAlignment.spaceBetween,
-                                          children: [
-                                            Text(
-                                              n.title,
-                                              style: TextStyle(
-                                                fontSize: 13.sp,
-                                                fontWeight: FontWeight.w600,
-                                                color:
-                                                    const Color(0xFF1C1C1E),
-                                              ),
-                                            ),
-                                            Text(
-                                              n.time,
-                                              style: TextStyle(
-                                                fontSize: 10.sp,
-                                                color:
-                                                    const Color(0xFF8E8E93),
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                        SizedBox(height: 0.4.h),
-                                        Text(
-                                          n.subtitle,
-                                          style: TextStyle(
-                                            fontSize: 12.sp,
-                                            color: const Color(0xFF8E8E93),
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                  if (!n.isRead)
+                                  ],
+                                ),
+                                child: Row(
+                                  children: [
+                                    // Небольшой отступ слева под полоску,
+                                    // чтобы контент не наезжал на неё.
+                                    if (!n.isRead) SizedBox(width: 2.5.w),
                                     Container(
-                                      width: 2.w,
-                                      height: 2.w,
-                                      margin: EdgeInsets.only(left: 2.w),
-                                      decoration: const BoxDecoration(
-                                        color: Color(0xFF3A6FF8),
+                                      width: 11.w,
+                                      height: 11.w,
+                                      decoration: BoxDecoration(
+                                        color: _colorFor(
+                                          n.type,
+                                        ).withOpacity(0.12),
                                         shape: BoxShape.circle,
                                       ),
+                                      child: Icon(
+                                        _iconFor(n.type),
+                                        color: _colorFor(n.type),
+                                        size: 5.w,
+                                      ),
                                     ),
-                                ],
-                              ),
-                            ),
-                            // ── Синяя полоска слева для непрочитанных ──
-                            if (!n.isRead)
-                              Positioned(
-                                left: 0,
-                                top: 0,
-                                bottom: 0,
-                                child: Container(
-                                  width: 1.2.w,
-                                  color: const Color(0xFF3A6FF8),
+                                    SizedBox(width: 3.w),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Row(
+                                            mainAxisAlignment:
+                                                MainAxisAlignment.spaceBetween,
+                                            children: [
+                                              Text(
+                                                n.title,
+                                                style: TextStyle(
+                                                  fontSize: 13.sp,
+                                                  fontWeight: FontWeight.w600,
+                                                  color: const Color(
+                                                    0xFF1C1C1E,
+                                                  ),
+                                                ),
+                                              ),
+                                              Text(
+                                                n.time,
+                                                style: TextStyle(
+                                                  fontSize: 10.sp,
+                                                  color: const Color(
+                                                    0xFF8E8E93,
+                                                  ),
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                          SizedBox(height: 0.4.h),
+                                          Text(
+                                            n.subtitle,
+                                            style: TextStyle(
+                                              fontSize: 12.sp,
+                                              color: const Color(0xFF8E8E93),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    if (!n.isRead)
+                                      Container(
+                                        width: 2.w,
+                                        height: 2.w,
+                                        margin: EdgeInsets.only(left: 2.w),
+                                        decoration: const BoxDecoration(
+                                          color: Color(0xFF3A6FF8),
+                                          shape: BoxShape.circle,
+                                        ),
+                                      ),
+                                  ],
                                 ),
                               ),
-                          ],
+                              // ── Синяя полоска слева для непрочитанных ──
+                              if (!n.isRead)
+                                Positioned(
+                                  left: 0,
+                                  top: 0,
+                                  bottom: 0,
+                                  child: Container(
+                                    width: 1.2.w,
+                                    color: const Color(0xFF3A6FF8),
+                                  ),
+                                ),
+                            ],
+                          ),
                         ),
-                      ),
-                    );
-                  },
-                ),
+                      );
+                    },
+                  ),
+          ),
         ),
       ),
     );
