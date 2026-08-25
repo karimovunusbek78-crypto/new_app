@@ -10,7 +10,6 @@ import 'package:new_app/src/pages/pages.dart';
 import 'package:new_app/src/video/controller/main_tab_controller.dart';
 import 'package:provider/provider.dart';
 import 'firebase_options.dart';
-
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 

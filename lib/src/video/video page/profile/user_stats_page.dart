@@ -6,6 +6,7 @@ import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:new_app/src/video/video%20page/page/chanel_analytics_page.dart';
+import 'package:new_app/src/video/video%20page/profile/autosalon_stats_page.dart';
 import 'package:provider/provider.dart';
 import 'package:responsive_sizer/responsive_sizer.dart';
 
@@ -27,7 +28,15 @@ import 'package:new_app/src/pages/home/providers/subscribtion_provider.dart';
 ///  • для СВОЕГО профиля — вместо кнопки подписки показывается пилюля-
 ///    кнопка «Аналитика канала», которая открывает ChanelAnalyticsPage —
 ///    сводную статистику по всем публикациям (просмотры/лайки/интерес).
-///  • сетку публикаций с аналитикой (лайки, просмотры, за сегодня).
+///  • если у этого пользователя (свой ИЛИ чужой профиль — не важно) есть
+///    автосалон (документ autosalons/{uid} существует), показывается
+///    отдельная пилюля-кнопка «Автосалон», которая открывает
+///    AutosalonStatsPage — публичный профиль/каталог его салона.
+///  • сетку публикаций с аналитикой (лайки, просмотры, за сегодня) —
+///    ТОЛЬКО личные объявления (isAutosalonCar == false); авто, добавленные
+///    через автосалон, здесь не показываются — они живут на странице
+///    самого автосалона (AutosalonStatsPage), чтобы не дублировать один и
+///    тот же список машин в двух местах.
 ///
 /// ФИКСЫ:
 ///  • Стрелка «назад» раньше жила ВНУТРИ _ChannelHeader (SliverToBoxAdapter)
@@ -55,6 +64,10 @@ import 'package:new_app/src/pages/home/providers/subscribtion_provider.dart';
 ///  • Тап по аватару открывает полноэкранный просмотр фото по центру
 ///    экрана; если это свой профиль — можно сразу сменить фото (тем же
 ///    способом, что и на странице «Профиль»).
+///  • Публикации автосалона (isAutosalonCar == true) больше не попадают
+///    в сетку «Публикации» этой страницы — они относятся к автосалону,
+///    а не к личному профилю продавца, и уже показываются на его
+///    собственной странице AutosalonStatsPage.
 class UserStatsPage extends StatelessWidget {
   final String uid;
   const UserStatsPage({super.key, required this.uid});
@@ -66,7 +79,10 @@ class UserStatsPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final cars = context.watch<CarsProvider>().myCars(uid);
+    // Личные объявления только — публикации автосалона (isAutosalonCar)
+    // исключаются, у них своя витрина на странице автосалона.
+    final allCars = context.watch<CarsProvider>().myCars(uid);
+    final cars = allCars.where((c) => !c.isAutosalonCar).toList();
     final totalLikes = cars.fold<int>(0, (sum, c) => sum + c.likesCount);
     final totalViews = cars.fold<int>(0, (sum, c) => sum + c.viewsCount);
     final myUid = FirebaseAuth.instance.currentUser?.uid;
@@ -90,89 +106,106 @@ class UserStatsPage extends StatelessWidget {
         backgroundColor: _bg,
         body: Stack(
           children: [
+            // Живой стрим на autosalons/{uid} — просто проверяем, есть ли у
+            // этого пользователя (свой или чужой профиль) автосалон, чтобы
+            // показать кнопку «Автосалон» в шапке. Обёрнут снаружи, чтобы
+            // не мешать существующему стриму профиля users/{uid} ниже.
             StreamBuilder<DocumentSnapshot>(
               stream: FirebaseFirestore.instance
-                  .collection('users')
+                  .collection('autosalons')
                   .doc(uid)
                   .snapshots(),
-              builder: (context, snap) {
-                final data = snap.data?.data() as Map<String, dynamic>?;
-                final name = ((data?['name'] as String?) ?? '').trim();
-                final avatarUrl =
-                    ((data?['avatarUrl'] as String?) ?? '').trim();
-                final subscribers = (data?['subscribersCount'] ?? 0) as num;
+              builder: (context, salonSnap) {
+                final hasAutosalon = salonSnap.data?.exists ?? false;
 
-                return CustomScrollView(
-                  // ClampingScrollPhysics: без пружинного оттягивания вниз,
-                  // когда уже находишься в самом верху списка (был bounce
-                  // из-за BouncingScrollPhysics — типичный iOS-эффект, но
-                  // здесь он не нужен).
-                  physics: const ClampingScrollPhysics(
-                      parent: AlwaysScrollableScrollPhysics()),
-                  slivers: [
-                    SliverToBoxAdapter(
-                      child: _ChannelHeader(
-                        name: name.isNotEmpty ? name : 'Автор',
-                        avatarUrl: avatarUrl,
-                        subscribers: subscribers.toInt(),
-                        publications: cars.length,
-                        totalLikes: totalLikes,
-                        totalViews: totalViews,
-                        showSubscribe: !isMe,
-                        isMe: isMe,
-                        uid: uid,
-                      ),
-                    ),
-                    SliverPersistentHeader(
-                      pinned: true,
-                      delegate: _SectionHeaderDelegate(count: cars.length),
-                    ),
-                    if (cars.isEmpty)
-                      SliverToBoxAdapter(
-                        child: Padding(
-                          padding: EdgeInsets.only(top: 6.h, bottom: 6.h),
-                          child: Column(
-                            children: [
-                              Icon(Icons.video_library_outlined,
-                                  size: 5.h, color: const Color(0xFFC8C8CC)),
-                              SizedBox(height: 1.5.h),
-                              Text(
-                                'Пока нет объявлений',
-                                style: TextStyle(
-                                    fontSize: 12.5.sp, color: _grey),
+                return StreamBuilder<DocumentSnapshot>(
+                  stream: FirebaseFirestore.instance
+                      .collection('users')
+                      .doc(uid)
+                      .snapshots(),
+                  builder: (context, snap) {
+                    final data = snap.data?.data() as Map<String, dynamic>?;
+                    final name = ((data?['name'] as String?) ?? '').trim();
+                    final avatarUrl =
+                        ((data?['avatarUrl'] as String?) ?? '').trim();
+                    final subscribers =
+                        (data?['subscribersCount'] ?? 0) as num;
+
+                    return CustomScrollView(
+                      // ClampingScrollPhysics: без пружинного оттягивания вниз,
+                      // когда уже находишься в самом верху списка (был bounce
+                      // из-за BouncingScrollPhysics — типичный iOS-эффект, но
+                      // здесь он не нужен).
+                      physics: const ClampingScrollPhysics(
+                          parent: AlwaysScrollableScrollPhysics()),
+                      slivers: [
+                        SliverToBoxAdapter(
+                          child: _ChannelHeader(
+                            name: name.isNotEmpty ? name : 'Автор',
+                            avatarUrl: avatarUrl,
+                            subscribers: subscribers.toInt(),
+                            publications: cars.length,
+                            totalLikes: totalLikes,
+                            totalViews: totalViews,
+                            showSubscribe: !isMe,
+                            isMe: isMe,
+                            uid: uid,
+                            hasAutosalon: hasAutosalon,
+                          ),
+                        ),
+                        SliverPersistentHeader(
+                          pinned: true,
+                          delegate: _SectionHeaderDelegate(count: cars.length),
+                        ),
+                        if (cars.isEmpty)
+                          SliverToBoxAdapter(
+                            child: Padding(
+                              padding: EdgeInsets.only(top: 6.h, bottom: 6.h),
+                              child: Column(
+                                children: [
+                                  Icon(Icons.video_library_outlined,
+                                      size: 5.h,
+                                      color: const Color(0xFFC8C8CC)),
+                                  SizedBox(height: 1.5.h),
+                                  Text(
+                                    'Пока нет объявлений',
+                                    style: TextStyle(
+                                        fontSize: 12.5.sp, color: _grey),
+                                  ),
+                                ],
                               ),
-                            ],
+                            ),
+                          )
+                        else
+                          SliverPadding(
+                            padding: EdgeInsets.fromLTRB(4.w, 1.5.h, 4.w, 0),
+                            sliver: SliverGrid(
+                              gridDelegate:
+                                  SliverGridDelegateWithFixedCrossAxisCount(
+                                crossAxisCount: 2,
+                                crossAxisSpacing: 3.w,
+                                mainAxisSpacing: 2.5.h,
+                                // Высота карточки не зависит от текста — картинка
+                                // сама сжимается (Expanded), поэтому переполнение
+                                // снизу больше не может произойти при любом
+                                // соотношении сторон экрана.
+                                childAspectRatio: 0.66,
+                              ),
+                              delegate: SliverChildBuilderDelegate(
+                                // isMe пробрасывается в карточку, чтобы бейдж
+                                // «+N сегодня» показывался только владельцу.
+                                (context, i) =>
+                                    _VideoCard(car: cars[i], isMe: isMe),
+                                childCount: cars.length,
+                              ),
+                            ),
                           ),
+                        SliverToBoxAdapter(
+                          child: SizedBox(height: 2.h + bottomSafe),
                         ),
-                      )
-                    else
-                      SliverPadding(
-                        padding: EdgeInsets.fromLTRB(4.w, 1.5.h, 4.w, 0),
-                        sliver: SliverGrid(
-                          gridDelegate:
-                              SliverGridDelegateWithFixedCrossAxisCount(
-                            crossAxisCount: 2,
-                            crossAxisSpacing: 3.w,
-                            mainAxisSpacing: 2.5.h,
-                            // Высота карточки не зависит от текста — картинка
-                            // сама сжимается (Expanded), поэтому переполнение
-                            // снизу больше не может произойти при любом
-                            // соотношении сторон экрана.
-                            childAspectRatio: 0.66,
-                          ),
-                          delegate: SliverChildBuilderDelegate(
-                            // isMe пробрасывается в карточку, чтобы бейдж
-                            // «+N сегодня» показывался только владельцу.
-                            (context, i) =>
-                                _VideoCard(car: cars[i], isMe: isMe),
-                            childCount: cars.length,
-                          ),
-                        ),
-                      ),
-                    SliverToBoxAdapter(
-                      child: SizedBox(height: 2.h + bottomSafe),
-                    ),
-                  ],
+                      ],
+                    );
+                  },
                 );
               },
             ),
@@ -295,6 +328,7 @@ class _ChannelHeader extends StatelessWidget {
   final bool showSubscribe;
   final bool isMe;
   final String uid;
+  final bool hasAutosalon;
 
   const _ChannelHeader({
     required this.name,
@@ -306,6 +340,7 @@ class _ChannelHeader extends StatelessWidget {
     required this.showSubscribe,
     required this.isMe,
     required this.uid,
+    required this.hasAutosalon,
   });
 
   static const _ink = Color(0xFF0F0F0F);
@@ -494,6 +529,13 @@ class _ChannelHeader extends StatelessWidget {
           _SubscribeButton(uid: uid)
         else if (isMe)
           _MyProfileBadge(uid: uid),
+        // Кнопка «Автосалон» — показывается ВСЕГДА, когда у этого uid есть
+        // документ в autosalons/{uid}, независимо от того, свой это профиль
+        // или чужой. Ведёт на публичную страницу/каталог автосалона.
+        if (hasAutosalon) ...[
+          SizedBox(height: 1.2.h),
+          _VisitAutosalonButton(salonId: uid),
+        ],
         SizedBox(height: 1.6.h),
         const Divider(height: 1, thickness: 1, color: Color(0xFFECECEE)),
       ],
@@ -943,6 +985,57 @@ class _MyProfileBadge extends StatelessWidget {
             SizedBox(width: 1.5.w),
             Text(
               'Аналитика',
+              style: TextStyle(
+                fontSize: 11.5.sp,
+                fontWeight: FontWeight.w700,
+                color: _ink,
+              ),
+            ),
+            SizedBox(width: 1.w),
+            Icon(Icons.chevron_right_rounded, size: 2.h, color: _ink),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ── Кнопка «Автосалон» — показывается в шапке профиля (свой ИЛИ чужой),
+// когда у этого uid есть документ в autosalons/{uid}. Ведёт на публичную
+// страницу автосалона (каталог машин салона, локации, галерея). Не
+// заменяет ничего — просто ещё одна пилюля рядом с «Подписаться»/
+// «Аналитика», т.к. один и тот же человек может быть и обычным продавцом,
+// и владельцем автосалона одновременно.
+class _VisitAutosalonButton extends StatelessWidget {
+  final String salonId;
+  const _VisitAutosalonButton({required this.salonId});
+
+  static const _ink = Color(0xFF0F0F0F);
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: () => Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => AutosalonStatsPage(salonId: salonId),
+        ),
+      ),
+      behavior: HitTestBehavior.opaque,
+      child: Container(
+        padding: EdgeInsets.symmetric(horizontal: 5.w, vertical: 1.1.h),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(8.w),
+          border: Border.all(color: _ink, width: 1.2),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.storefront_outlined, size: 2.h, color: _ink),
+            SizedBox(width: 1.5.w),
+            Text(
+              'Автосалон',
               style: TextStyle(
                 fontSize: 11.5.sp,
                 fontWeight: FontWeight.w700,

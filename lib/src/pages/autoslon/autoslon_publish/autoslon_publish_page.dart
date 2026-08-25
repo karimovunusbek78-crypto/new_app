@@ -24,7 +24,7 @@ class _UploadProgress {
 
 class AutoslonPublishPage extends StatefulWidget {
 
-  
+
   const AutoslonPublishPage({Key? key}) : super(key: key);
 
   @override
@@ -146,10 +146,6 @@ class _AutoslonPublishPageState extends State<AutoslonPublishPage>
   final List<_CarEntry> _cars = [];
 
   // ── Publish progress ────────────────────────────────────────────
-  // showDialog() inserts the progress sheet into the Navigator's overlay,
-  // which is NOT a descendant of this page's build() — so a plain
-  // setState() on this State never rebuilds it. A ValueNotifier lets the
-  // dialog listen for updates independently via ValueListenableBuilder.
   bool _publishing = false;
   final ValueNotifier<_UploadProgress> _uploadProgress =
       ValueNotifier(const _UploadProgress(done: 0, total: 0, label: ''));
@@ -252,7 +248,6 @@ class _AutoslonPublishPageState extends State<AutoslonPublishPage>
       );
 
   // ── Locations ─────────────────────────────────────────────────
-  /// Opens LocationAddPage to add a brand-new location.
   Future<void> _addLocationTapped() async {
     final result =
         await Navigator.push<(String, String, double, double, List<XFile>)>(
@@ -273,7 +268,6 @@ class _AutoslonPublishPageState extends State<AutoslonPublishPage>
     });
   }
 
-  /// Opens LocationAddPage pre-filled so the user can edit an existing one.
   Future<void> _editLocationTapped(int index) async {
     final loc = _locations[index];
     final result =
@@ -327,9 +321,6 @@ class _AutoslonPublishPageState extends State<AutoslonPublishPage>
   }
 
   // ── Cars ──────────────────────────────────────────────────────
-  // Now pushes a full-page form (like the individual-seller CarPublishPage)
-  // instead of a small name/price bottom sheet, so cars added inside an
-  // autosalon carry the same real specs.
   Future<void> _openAddCarSheet() async {
     final result = await Navigator.push<_CarEntry>(
       context,
@@ -349,24 +340,6 @@ class _AutoslonPublishPageState extends State<AutoslonPublishPage>
   void _removeCar(int i) => setState(() => _cars.removeAt(i));
 
   // ── Publish ───────────────────────────────────────────────────
-  //
-  // ВАЖНО: раньше эта кнопка ничего не сохраняла — просто показывала
-  // снекбар и закрывала страницу, поэтому "опубликованный" автосалон
-  // нигде не сохранялся и исчезал при перезапуске. Теперь:
-  //  1) Логотип, фото/видео салона, фото локаций и фото/видео каждого
-  //     авто реально грузятся в Firebase Storage (с таймаутом на файл,
-  //     чтобы не зависать бесконечно при плохой сети).
-  //  2) Данные пишутся в Firestore:
-  //       autosalons/{uid}                — профиль салона (один на юзера)
-  //       autosalons/{uid}/locations/{id} — локации
-  //       cars/{autoId}                   — каждый авто как ОБЫЧНЫЙ
-  //         документ в общей коллекции cars (ID генерируется Firestore,
-  //         а НЕ uid — тот же фикс, что и в обычном CarPublishPage),
-  //         но с доп. полями autosalonId/autosalonName/autosalonLogoUrl,
-  //         поэтому авто автоматически попадает в общую видео-ленту и
-  //         помечается как объявление автосалона.
-  //  3) Пока идёт загрузка — модальная шторка с реальным прогрессом
-  //     (сколько файлов из скольких уже залито), а не бесконечный спиннер.
   Future<void> _publish() async {
     if (_publishing) return;
     if (_salonName.trim().isEmpty) {
@@ -390,9 +363,7 @@ class _AutoslonPublishPageState extends State<AutoslonPublishPage>
     final confirmed = await showPublishConfirmDialog(context);
     if (!confirmed || !mounted) return;
 
-    // Считаем общее число файлов заранее — чтобы прогресс-бар в шторке
-    // был честным (а не "крутится непонятно сколько").
-    final totalFiles = 1 /* лого, может отсутствовать — учтём ниже */ +
+    final totalFiles = 1 +
         _photos.length +
         (_video != null ? 1 : 0) +
         _locations.fold<int>(0, (s, l) => s + l.photos.length) +
@@ -417,8 +388,6 @@ class _AutoslonPublishPageState extends State<AutoslonPublishPage>
           'autosalons/$uid/logo_${DateTime.now().millisecondsSinceEpoch}.jpg',
         );
       } else {
-        // лого не выбрано — всё равно "засчитываем" зарезервированный слот,
-        // чтобы прогресс-бар дошёл до конца корректно.
         _bumpProgress();
       }
 
@@ -443,10 +412,7 @@ class _AutoslonPublishPageState extends State<AutoslonPublishPage>
         );
       }
 
-      // 3) Локации (+ их фото), пишем в подколлекцию, чтобы легко
-      //    добавлять/удалять локации без переписывания всего салона.
-      //    Сначала чистим старые локации (на случай republish), потом
-      //    пишем актуальный набор.
+      // 3) Локации (+ их фото)
       final locationsCol = salonRef.collection('locations');
       final oldLocs = await locationsCol.get();
       for (final d in oldLocs.docs) {
@@ -473,13 +439,12 @@ class _AutoslonPublishPageState extends State<AutoslonPublishPage>
         });
       }
 
-      // 4) Авто — каждое пишется отдельным документом в top-level
-      //    коллекции `cars`, чтобы сразу появляться в общей видео-ленте.
+      // 4) Авто
       final carsCol = FirebaseFirestore.instance.collection('cars');
       var carsPublished = 0;
       for (var i = 0; i < _cars.length; i++) {
         final car = _cars[i];
-        final carDoc = carsCol.doc(); // авто-ID, НЕ uid — см. комментарий выше
+        final carDoc = carsCol.doc();
         final photoUrls = <String>[];
         for (var p = 0; p < car.photos.length; p++) {
           _tickLabel('Авто ${i + 1}/${_cars.length}: фото ${p + 1}…');
@@ -499,7 +464,6 @@ class _AutoslonPublishPageState extends State<AutoslonPublishPage>
           );
         }
         if (photoUrls.isEmpty) {
-          // без фото объявление не публикуем, но слот в прогрессе уже учтён
           continue;
         }
         await carDoc.set({
@@ -532,10 +496,7 @@ class _AutoslonPublishPageState extends State<AutoslonPublishPage>
         carsPublished++;
       }
 
-      // 5) Профиль салона — пишем последним, когда уже точно знаем
-      //    итоговые счётчики и урлы. merge:true — чтобы повторная
-      //    публикация (например, добавили ещё одно авто позже) не
-      //    затирала поля, которых нет в этом вызове.
+      // 5) Профиль салона
       await salonRef.set({
         'ownerId': uid,
         'name': _salonName.trim(),
@@ -557,7 +518,7 @@ class _AutoslonPublishPageState extends State<AutoslonPublishPage>
       } catch (_) {}
 
       if (!mounted) return;
-      Navigator.pop(context); // закрыть шторку прогресса
+      Navigator.pop(context);
       setState(() => _publishing = false);
       _showSnack('Автосалон опубликован 🎉');
       Navigator.push(
@@ -566,7 +527,7 @@ class _AutoslonPublishPageState extends State<AutoslonPublishPage>
       );
     } catch (e) {
       if (!mounted) return;
-      Navigator.pop(context); // закрыть шторку прогресса
+      Navigator.pop(context);
       setState(() => _publishing = false);
       _showSnack('Не удалось опубликовать: $e');
     }
@@ -588,10 +549,15 @@ class _AutoslonPublishPageState extends State<AutoslonPublishPage>
     );
   }
 
-  /// Грузит один файл в Storage с таймаутом (по умолчанию 45 сек),
-  /// чтобы плохая сеть подвешивала максимум один файл, а не всю
-  /// публикацию навсегда. При ошибке/таймауте возвращает null и
-  /// публикация продолжается без этого конкретного файла.
+  /// Грузит один файл в Storage с таймаутом (по умолчанию 45 сек).
+  /// ФИКС: раньше ошибка молча проглатывалась (catch (_) { return null; }),
+  /// из-за чего было невозможно понять, ПОЧЕМУ файл не залился —
+  /// не хватало прав в Storage Rules, таймаут по сети, или что-то ещё.
+  /// Теперь ошибка печатается в debug-консоль с путём, к которому шла
+  /// попытка записи — сразу видно, например,
+  /// "Upload failed for autosalons/UID/logo_....jpg:
+  /// [firebase_storage/unauthorized] ..." — что прямо указывает на
+  /// отсутствующее правило в storage.rules для autosalons/.
   Future<String?> _uploadFile(
     File file,
     String path, {
@@ -601,18 +567,12 @@ class _AutoslonPublishPageState extends State<AutoslonPublishPage>
       final ref = FirebaseStorage.instance.ref(path);
       await ref.putFile(file).timeout(timeout);
       return await ref.getDownloadURL();
-    } catch (_) {
+    } catch (e) {
+      debugPrint('Upload failed for $path: $e');
       return null;
     }
   }
 
-  /// Модальная шторка с прогрессом публикации — не закрывается по тапу
-  /// снаружи или системной кнопке "назад" (PopScope canPop: false), чтобы
-  /// случайный жест не оборвал ощущение процесса визуально (сама загрузка
-  /// в фоне продолжится в любом случае, поп-скоуп только про UI).
-  /// Прогресс берётся из _uploadProgress (ValueNotifier) — обновляется
-  /// живьём через _tickLabel/_bumpProgress, без setState() родителя,
-  /// потому что showDialog() живёт вне дерева этой страницы.
   void _showUploadSheet() {
     showDialog(
       context: context,
@@ -677,8 +637,6 @@ class _AutoslonPublishPageState extends State<AutoslonPublishPage>
         ),
       ),
     ).then((_) {
-      // На случай, если диалог закрылся раньше времени — не оставляем
-      // флаг "публикуется" висеть навсегда.
       if (mounted && _publishing) setState(() => _publishing = false);
     });
   }
@@ -983,7 +941,7 @@ class _AutoslonPublishPageState extends State<AutoslonPublishPage>
   Widget _locationsRow() {
     if (_locations.isEmpty) return _locationsEmptyCard();
     return SizedBox(
-      height: 17.h, // slightly taller to fit photo strip
+      height: 17.h,
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
         physics: const BouncingScrollPhysics(),
@@ -1055,8 +1013,6 @@ class _AutoslonPublishPageState extends State<AutoslonPublishPage>
     );
   }
 
-  /// Location card — shows up to 2 photos as background if available.
-  /// Edit (pencil) and delete (×) buttons overlay the top corners.
   Widget _locationCard(_SalonLocation loc, {required int index}) {
     final hasPhotos = loc.photos.isNotEmpty;
 
