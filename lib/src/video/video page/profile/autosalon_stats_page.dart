@@ -13,6 +13,7 @@ import 'package:video_player/video_player.dart';
 import 'package:new_app/src/pages/home/models/car.dart';
 import 'package:new_app/src/pages/home/pages/car_detail_page.dart';
 import 'package:new_app/src/pages/pages.dart'; // ProfileEdit
+import 'package:new_app/src/pages/autoslon/location/location_add_page.dart';
 
 /// Public "profile" page for an autosalon — the salon equivalent of
 /// UserStatsPage. Everything here is loaded ONCE from Firestore
@@ -22,8 +23,10 @@ import 'package:new_app/src/pages/pages.dart'; // ProfileEdit
 /// re-runs the same three loads.
 ///
 /// If the current user IS the salon owner, they get an edit pencil on
-/// the header (updates name/tagline/years/logo) and an "add car" tile
-/// in the grid (same fields/flow as AutoslonPublishPage's car form).
+/// the header (updates name/tagline/years/logo), an "add car" tile
+/// in the grid (same fields/flow as AutoslonPublishPage's car form),
+/// and full location management (add / edit / delete / photos) — same
+/// LocationAddPage flow used during initial publish.
 ///
 /// Reached from:
 ///  - the "Все авто →" banner on an autosalon car inside VideoPage
@@ -56,7 +59,7 @@ class _AutosalonStatsPageState extends State<AutosalonStatsPage> {
   // ── One-time data ────────────────────────────────────────────
   bool _loading = true;
   Map<String, dynamic>? _salonData;
-  List<Map<String, dynamic>> _locations = [];
+  List<QueryDocumentSnapshot<Map<String, dynamic>>> _locationDocs = [];
   List<QueryDocumentSnapshot<Map<String, dynamic>>> _carDocs = [];
 
   @override
@@ -93,10 +96,10 @@ class _AutosalonStatsPageState extends State<AutosalonStatsPage> {
   Future<void> _loadLocations() async {
     try {
       final snap = await _salonRef.collection('locations').get();
-      _locations = snap.docs.map((d) => d.data()).toList();
+      _locationDocs = snap.docs;
     } catch (e) {
       debugPrint('Failed to load locations for ${widget.salonId}: $e');
-      _locations = [];
+      _locationDocs = [];
     }
   }
 
@@ -200,6 +203,192 @@ class _AutosalonStatsPageState extends State<AutosalonStatsPage> {
       if (mounted) {
         ScaffoldMessenger.of(context)
             .showSnackBar(SnackBar(content: Text('Не удалось сохранить: $e')));
+      }
+    } finally {
+      if (mounted) Navigator.of(context, rootNavigator: true).pop();
+      if (mounted) setState(() {});
+    }
+  }
+
+  // ── Owner: manage locations (add / edit / delete) ────────────────
+  // Same LocationAddPage flow used during initial publish (AutoslonPublishPage),
+  // so adding/editing a location here looks and behaves identically.
+  Future<void> _addLocationTapped() async {
+    final result =
+        await Navigator.push<(String, String, double, double, List<XFile>)>(
+      context,
+      MaterialPageRoute(builder: (_) => const LocationAddPage()),
+    );
+    if (result == null || !mounted) return;
+    await _saveNewLocation(
+      city: result.$1,
+      address: result.$2,
+      lat: result.$3,
+      lng: result.$4,
+      photos: result.$5,
+    );
+  }
+
+  Future<void> _saveNewLocation({
+    required String city,
+    required String address,
+    required double lat,
+    required double lng,
+    required List<XFile> photos,
+  }) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null || user.uid != widget.salonId) return;
+    final uid = widget.salonId;
+
+    _showBlockingLoader('Добавляем локацию…');
+    try {
+      final locDoc = _salonRef.collection('locations').doc();
+      final photoUrls = <String>[];
+      for (var p = 0; p < photos.length; p++) {
+        final url = await _uploadFile(
+          File(photos[p].path),
+          'autosalons/$uid/locations/${locDoc.id}/photo_$p.jpg',
+        );
+        if (url != null) photoUrls.add(url);
+      }
+      await locDoc.set({
+        'city': city,
+        'address': address,
+        'lat': lat,
+        'lng': lng,
+        'photoUrls': photoUrls,
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+      await _loadLocations();
+    } catch (e) {
+      debugPrint('Failed to add location for salon $uid: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Не удалось добавить локацию: $e')));
+      }
+    } finally {
+      if (mounted) Navigator.of(context, rootNavigator: true).pop();
+      if (mounted) setState(() {});
+    }
+  }
+
+  // Edit form is pre-filled with the current city/address/coordinates.
+  // Photos can't be pre-filled as local files (they're already-uploaded
+  // network URLs), so: pick new photos → they REPLACE the old ones;
+  // leave photos empty → the existing photoUrls are kept untouched.
+  Future<void> _editLocationTapped(
+      String docId, Map<String, dynamic> data) async {
+    final city = (data['city'] as String?) ?? '';
+    final address = (data['address'] as String?) ?? '';
+    final lat = (data['lat'] as num?)?.toDouble() ?? 0;
+    final lng = (data['lng'] as num?)?.toDouble() ?? 0;
+    final existingPhotoUrls =
+        (data['photoUrls'] as List?)?.whereType<String>().toList() ??
+            const <String>[];
+
+    final result =
+        await Navigator.push<(String, String, double, double, List<XFile>)>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => LocationAddPage(
+          initialCity: city,
+          initialAddress: address,
+          initialLat: lat,
+          initialLng: lng,
+        ),
+      ),
+    );
+    if (result == null || !mounted) return;
+    await _saveEditedLocation(
+      docId: docId,
+      city: result.$1,
+      address: result.$2,
+      lat: result.$3,
+      lng: result.$4,
+      newPhotos: result.$5,
+      existingPhotoUrls: existingPhotoUrls,
+    );
+  }
+
+  Future<void> _saveEditedLocation({
+    required String docId,
+    required String city,
+    required String address,
+    required double lat,
+    required double lng,
+    required List<XFile> newPhotos,
+    required List<String> existingPhotoUrls,
+  }) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null || user.uid != widget.salonId) return;
+    final uid = widget.salonId;
+
+    _showBlockingLoader('Сохраняем локацию…');
+    try {
+      var photoUrls = existingPhotoUrls;
+      if (newPhotos.isNotEmpty) {
+        final uploaded = <String>[];
+        for (var p = 0; p < newPhotos.length; p++) {
+          final url = await _uploadFile(
+            File(newPhotos[p].path),
+            'autosalons/$uid/locations/$docId/photo_${DateTime.now().millisecondsSinceEpoch}_$p.jpg',
+          );
+          if (url != null) uploaded.add(url);
+        }
+        if (uploaded.isNotEmpty) photoUrls = uploaded;
+      }
+
+      await _salonRef.collection('locations').doc(docId).set({
+        'city': city,
+        'address': address,
+        'lat': lat,
+        'lng': lng,
+        'photoUrls': photoUrls,
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+      await _loadLocations();
+    } catch (e) {
+      debugPrint('Failed to update location $docId for salon $uid: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Не удалось сохранить локацию: $e')));
+      }
+    } finally {
+      if (mounted) Navigator.of(context, rootNavigator: true).pop();
+      if (mounted) setState(() {});
+    }
+  }
+
+  Future<void> _deleteLocationTapped(String docId) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Удалить локацию?'),
+        content: const Text('Это действие нельзя отменить.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Отмена'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Удалить', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    _showBlockingLoader('Удаляем локацию…');
+    try {
+      await _salonRef.collection('locations').doc(docId).delete();
+      await _loadLocations();
+    } catch (e) {
+      debugPrint(
+          'Failed to delete location $docId for salon ${widget.salonId}: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Не удалось удалить локацию: $e')));
       }
     } finally {
       if (mounted) Navigator.of(context, rootNavigator: true).pop();
@@ -717,9 +906,12 @@ class _AutosalonStatsPageState extends State<AutosalonStatsPage> {
     );
   }
 
-  // ── Locations (one-time, loaded into _locations) ──────────────────
+  // ── Locations (one-time, loaded into _locationDocs) ────────────────
+  // Owner sees an "add location" tile at the end of the row, plus
+  // edit/delete icon buttons on every card. Non-owners just browse
+  // (tap a card to view full details, exactly as before).
   Widget _locationsSection() {
-    if (_locations.isEmpty) {
+    if (_locationDocs.isEmpty && !_isOwner) {
       return Padding(
         padding: EdgeInsets.symmetric(horizontal: 5.w),
         child: Text(
@@ -734,10 +926,14 @@ class _AutosalonStatsPageState extends State<AutosalonStatsPage> {
         scrollDirection: Axis.horizontal,
         physics: const BouncingScrollPhysics(),
         padding: EdgeInsets.symmetric(horizontal: 5.w),
-        itemCount: _locations.length,
+        itemCount: _locationDocs.length + (_isOwner ? 1 : 0),
         separatorBuilder: (_, __) => SizedBox(width: 3.w),
         itemBuilder: (_, i) {
-          final d = _locations[i];
+          if (_isOwner && i == _locationDocs.length) {
+            return _addLocationTile();
+          }
+          final doc = _locationDocs[i];
+          final d = doc.data();
           final city = (d['city'] as String?) ?? '';
           final address = (d['address'] as String?) ?? '';
           final lat = (d['lat'] as num?)?.toDouble();
@@ -745,14 +941,42 @@ class _AutosalonStatsPageState extends State<AutosalonStatsPage> {
           final photoUrls =
               (d['photoUrls'] as List?)?.whereType<String>().toList() ??
                   const <String>[];
-          return _locationCard(city, address, photoUrls, lat, lng);
+          return _locationCard(doc.id, d, city, address, photoUrls, lat, lng);
         },
       ),
     );
   }
 
-  Widget _locationCard(String city, String address, List<String> photoUrls,
-      double? lat, double? lng) {
+  Widget _addLocationTile() {
+    return GestureDetector(
+      onTap: _addLocationTapped,
+      child: Container(
+        width: 36.w,
+        height: 16.h,
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(4.5.w),
+          border: Border.all(color: const Color(0xFFE2E2E6), width: 1.4),
+        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.add_location_alt_outlined, color: _accent, size: 3.6.h),
+            SizedBox(height: 0.8.h),
+            Text('Добавить\nлокацию',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                    fontSize: 10.sp,
+                    color: const Color(0xFF8A8A90),
+                    fontWeight: FontWeight.w600)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _locationCard(String docId, Map<String, dynamic> data, String city,
+      String address, List<String> photoUrls, double? lat, double? lng) {
     final hasPhotos = photoUrls.isNotEmpty;
     return GestureDetector(
       onTap: () => _showLocationDetails(city, address, photoUrls, lat, lng),
@@ -821,19 +1045,55 @@ class _AutosalonStatsPageState extends State<AutosalonStatsPage> {
                   ),
                 ),
               ),
-              Positioned(
-                right: 2.6.w,
-                top: 1.4.h,
-                child: Container(
-                  padding: EdgeInsets.all(1.3.w),
-                  decoration: BoxDecoration(
-                    color: Colors.black.withOpacity(0.35),
-                    shape: BoxShape.circle,
+              if (_isOwner) ...[
+                Positioned(
+                  left: 1.6.w,
+                  top: 1.4.h,
+                  child: GestureDetector(
+                    onTap: () => _editLocationTapped(docId, data),
+                    behavior: HitTestBehavior.opaque,
+                    child: Container(
+                      padding: EdgeInsets.all(1.3.w),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.92),
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(Icons.edit_outlined,
+                          color: Colors.black, size: 1.6.h),
+                    ),
                   ),
-                  child: Icon(Icons.open_in_full_rounded,
-                      color: Colors.white, size: 1.6.h),
                 ),
-              ),
+                Positioned(
+                  right: 2.6.w,
+                  top: 1.4.h,
+                  child: GestureDetector(
+                    onTap: () => _deleteLocationTapped(docId),
+                    behavior: HitTestBehavior.opaque,
+                    child: Container(
+                      padding: EdgeInsets.all(1.3.w),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.92),
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(Icons.close_rounded,
+                          color: Colors.black, size: 1.6.h),
+                    ),
+                  ),
+                ),
+              ] else
+                Positioned(
+                  right: 2.6.w,
+                  top: 1.4.h,
+                  child: Container(
+                    padding: EdgeInsets.all(1.3.w),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withOpacity(0.35),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(Icons.open_in_full_rounded,
+                        color: Colors.white, size: 1.6.h),
+                  ),
+                ),
               Positioned(
                 left: 0,
                 right: 0,

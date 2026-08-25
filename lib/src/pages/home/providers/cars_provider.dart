@@ -192,6 +192,7 @@ class CarsProvider extends ChangeNotifier {
           .where('viewedAt', isGreaterThanOrEqualTo: Timestamp.fromDate(startOfDay))
           .count()
           .get();
+          
       return snap.count ?? 0;
     } catch (_) {
       return 0;
