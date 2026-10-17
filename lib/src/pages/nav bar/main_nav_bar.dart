@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:new_app/src/video/controller/main_tab_controller.dart';
+import 'package:provider/provider.dart';
+import 'package:new_app/src/video/video%20page/video_page.dart';
 import 'package:responsive_sizer/responsive_sizer.dart';
-import 'package:new_app/src/pages/favorite/favorite_page.dart';
 import 'package:new_app/src/pages/pages.dart';
 import 'package:new_app/src/pages/profile/profile_page.dart';
 import 'package:new_app/src/pages/add/add_page.dart';
@@ -14,11 +16,11 @@ class MainNavBar extends StatefulWidget {
 }
 
 class _MainNavBarState extends State<MainNavBar> {
-  int _currentIndex = 0;
-
-  // Pages are built once so their state (scroll position, controllers, etc.)
-  // survives tab switches instead of being thrown away each rebuild.
   late final List<Widget> _pages;
+
+  // Индекс таба "Видео" — именно для него нижний бар переключается
+  // в тёмный стиль (белый бар поверх чёрной ленты выглядел чужеродно).
+  static const int _videoTabIndex = 2;
 
   @override
   void initState() {
@@ -26,15 +28,16 @@ class _MainNavBarState extends State<MainNavBar> {
     _pages = [
       HomePage(onSearchTap: () => _onTap(1)),
       const SearchPage(),
-      const FavoritePage(),
+      const VideoPage(),
       const ProfilePage(),
     ];
   }
 
   void _onTap(int index) {
-    if (index == _currentIndex) return;
+    final nav = context.read<NavTabController>();
+    if (index == nav.currentIndex) return;
     HapticFeedback.lightImpact();
-    setState(() => _currentIndex = index);
+    nav.setIndex(index);
   }
 
   void _onAddTap() {
@@ -46,23 +49,27 @@ class _MainNavBarState extends State<MainNavBar> {
   }
 
   final List<_NavItemData> _items = const [
-    _NavItemData(icon: Icons.home_rounded,     label: 'Главная'),
-    _NavItemData(icon: Icons.search_rounded,   label: 'Поиск'),
-    _NavItemData(icon: Icons.favorite_rounded, label: 'Избранное'),
-    _NavItemData(icon: Icons.person_rounded,   label: 'Профиль'),
+    _NavItemData(icon: Icons.home_rounded,            label: 'Главная'),
+    _NavItemData(icon: Icons.search_rounded,          label: 'Поиск'),
+    _NavItemData(icon: Icons.play_circle_fill_rounded, label: 'Видео'),
+    _NavItemData(icon: Icons.person_rounded,          label: 'Профиль'),
   ];
 
   @override
   Widget build(BuildContext context) {
+    final currentIndex = context.watch<NavTabController>().currentIndex;
+    final isDark = currentIndex == _videoTabIndex;
+
     return Scaffold(
       backgroundColor: Colors.white,
       body: _FadeIndexedStack(
-        index: _currentIndex,
+        index: currentIndex,
         children: _pages,
       ),
       bottomNavigationBar: _BottomNav(
         items: _items,
-        currentIndex: _currentIndex,
+        currentIndex: currentIndex,
+        isDark: isDark,
         onTap: _onTap,
         onAddTap: _onAddTap,
       ),
@@ -93,7 +100,6 @@ class _FadeIndexedStack extends StatelessWidget {
           opacity: active ? 1 : 0,
           duration: duration,
           curve: Curves.easeInOut,
-          // A whisper of movement makes the fade feel intentional, not laggy.
           child: AnimatedScale(
             scale: active ? 1 : 0.98,
             duration: duration,
@@ -121,12 +127,14 @@ class _NavItemData {
 class _BottomNav extends StatelessWidget {
   final List<_NavItemData> items;
   final int currentIndex;
+  final bool isDark;
   final ValueChanged<int> onTap;
   final VoidCallback onAddTap;
 
   const _BottomNav({
     required this.items,
     required this.currentIndex,
+    required this.isDark,
     required this.onTap,
     required this.onAddTap,
   });
@@ -137,15 +145,22 @@ class _BottomNav extends StatelessWidget {
       clipBehavior: Clip.none,
       alignment: Alignment.topCenter,
       children: [
-        Container(
+        AnimatedContainer(
+          duration: const Duration(milliseconds: 260),
+          curve: Curves.easeOut,
           decoration: BoxDecoration(
-            color: Colors.white,
-            border: const Border(
-              top: BorderSide(color: Color(0xFFEEEEEE), width: 1),
+            color: isDark ? const Color(0xFF0C0C0C) : Colors.white,
+            border: Border(
+              top: BorderSide(
+                color: isDark ? Colors.white.withOpacity(0.08) : const Color(0xFFEEEEEE),
+                width: 1,
+              ),
             ),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(0.06),
+                color: isDark
+                    ? Colors.black.withOpacity(0.5)
+                    : Colors.black.withOpacity(0.06),
                 blurRadius: 2.h,
                 offset: const Offset(0, -4),
               ),
@@ -157,11 +172,11 @@ class _BottomNav extends StatelessWidget {
               height: 8.h,
               child: Row(
                 children: [
-                  _NavItem(data: items[0], index: 0, isActive: currentIndex == 0, onTap: onTap),
-                  _NavItem(data: items[1], index: 1, isActive: currentIndex == 1, onTap: onTap),
+                  _NavItem(data: items[0], index: 0, isActive: currentIndex == 0, isDark: isDark, onTap: onTap),
+                  _NavItem(data: items[1], index: 1, isActive: currentIndex == 1, isDark: isDark, onTap: onTap),
                   SizedBox(width: 18.w),
-                  _NavItem(data: items[2], index: 2, isActive: currentIndex == 2, onTap: onTap),
-                  _NavItem(data: items[3], index: 3, isActive: currentIndex == 3, onTap: onTap),
+                  _NavItem(data: items[2], index: 2, isActive: currentIndex == 2, isDark: isDark, onTap: onTap),
+                  _NavItem(data: items[3], index: 3, isActive: currentIndex == 3, isDark: isDark, onTap: onTap),
                 ],
               ),
             ),
@@ -169,7 +184,7 @@ class _BottomNav extends StatelessWidget {
         ),
         Positioned(
           top: -0.7.h,
-          child: _AddButton(onTap: onAddTap),
+          child: _AddButton(onTap: onAddTap, isDark: isDark),
         ),
       ],
     );
@@ -180,7 +195,8 @@ class _BottomNav extends StatelessWidget {
 
 class _AddButton extends StatefulWidget {
   final VoidCallback onTap;
-  const _AddButton({required this.onTap});
+  final bool isDark;
+  const _AddButton({required this.onTap, required this.isDark});
 
   @override
   State<_AddButton> createState() => _AddButtonState();
@@ -191,6 +207,11 @@ class _AddButtonState extends State<_AddButton> {
 
   @override
   Widget build(BuildContext context) {
+    // На тёмном баре кнопка "+" становится белой с тёмной иконкой —
+    // фиолетовая на чёрном фоне теряла контраст с остальным UI ленты.
+    final bg = widget.isDark ? Colors.white : const Color(0xFF2D1B6E);
+    final iconColor = widget.isDark ? const Color(0xFF0C0C0C) : Colors.white;
+
     return GestureDetector(
       onTap: widget.onTap,
       onTapDown: (_) => setState(() => _down = true),
@@ -206,23 +227,23 @@ class _AddButtonState extends State<_AddButton> {
           width: 6.h,
           height: 6.h,
           decoration: BoxDecoration(
-            color: const Color(0xFF2D1B6E),
+            color: bg,
             shape: BoxShape.circle,
             boxShadow: [
               BoxShadow(
-                color: const Color(0xFF2D1B6E).withOpacity(_down ? 0.5 : 0.35),
+                color: bg.withOpacity(_down ? 0.5 : 0.35),
                 blurRadius: _down ? 18 : 12,
                 offset: Offset(0, _down ? 6 : 4),
               ),
             ],
           ),
           child: AnimatedRotation(
-            turns: _down ? 0.125 : 0.0, // 45° spin on press
+            turns: _down ? 0.125 : 0.0,
             duration: const Duration(milliseconds: 200),
             curve: Curves.easeOut,
             child: Icon(
               Icons.add_rounded,
-              color: Colors.white,
+              color: iconColor,
               size: 3.2.h,
             ),
           ),
@@ -238,12 +259,14 @@ class _NavItem extends StatefulWidget {
   final _NavItemData data;
   final int index;
   final bool isActive;
+  final bool isDark;
   final ValueChanged<int> onTap;
 
   const _NavItem({
     required this.data,
     required this.index,
     required this.isActive,
+    required this.isDark,
     required this.onTap,
   });
 
@@ -257,6 +280,16 @@ class _NavItemState extends State<_NavItem> {
   @override
   Widget build(BuildContext context) {
     final isActive = widget.isActive;
+    final isDark = widget.isDark;
+
+    // Тёмный бар: активный — белый, неактивный — приглушённый серый.
+    // Светлый бар: поведение как раньше (тёмно-фиолетовый / светло-серый).
+    final activeColor = isDark ? Colors.white : const Color.fromARGB(255, 5, 2, 19);
+    final inactiveColor = isDark ? Colors.white38 : const Color(0xFFBBBBBB);
+    final activeHighlight = isDark
+        ? Colors.white.withOpacity(0.12)
+        : const Color.fromARGB(255, 5, 2, 16).withOpacity(0.1);
+
     return Expanded(
       child: GestureDetector(
         onTap: () => widget.onTap(widget.index),
@@ -271,7 +304,6 @@ class _NavItemState extends State<_NavItem> {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              // Active icon gets a gentle overshoot "pop".
               AnimatedScale(
                 scale: isActive ? 1.0 : 0.92,
                 duration: const Duration(milliseconds: 260),
@@ -284,17 +316,13 @@ class _NavItemState extends State<_NavItem> {
                     vertical: 0.8.h,
                   ),
                   decoration: BoxDecoration(
-                    color: isActive
-                        ? const Color.fromARGB(255, 5, 2, 16).withOpacity(0.1)
-                        : Colors.transparent,
+                    color: isActive ? activeHighlight : Colors.transparent,
                     borderRadius: BorderRadius.circular(1.5.h),
                   ),
                   child: Icon(
                     widget.data.icon,
                     size: 2.8.h,
-                    color: isActive
-                        ? const Color.fromARGB(255, 5, 2, 19)
-                        : const Color(0xFFBBBBBB),
+                    color: isActive ? activeColor : inactiveColor,
                   ),
                 ),
               ),
@@ -304,9 +332,7 @@ class _NavItemState extends State<_NavItem> {
                 style: TextStyle(
                   fontSize: 11.sp,
                   fontWeight: isActive ? FontWeight.w700 : FontWeight.w500,
-                  color: isActive
-                      ? const Color.fromARGB(255, 6, 3, 19)
-                      : const Color(0xFFBBBBBB),
+                  color: isActive ? activeColor : inactiveColor,
                 ),
                 child: Text(widget.data.label),
               ),

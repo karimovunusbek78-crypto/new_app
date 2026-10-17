@@ -1,12 +1,15 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'package:new_app/src/pages/home/models/car.dart';
-import 'package:new_app/src/pages/home/models/cars_data.dart';
+import 'package:new_app/src/pages/home/providers/cars_provider.dart';
 import 'widgets/search_bar_widget.dart';
 import 'widgets/price_filter_widget.dart';
 import 'widgets/suggestions_view_widget.dart';
 import 'widgets/search_results_widget.dart';
 import 'widgets/category_grid_widget.dart';
 import 'widgets/brand_list_widget.dart';
+
+enum ResultFilter { all, video, listing }
 
 class SearchPage extends StatefulWidget {
   const SearchPage({super.key});
@@ -20,6 +23,8 @@ class _SearchPageState extends State<SearchPage> {
   final FocusNode _focusNode = FocusNode();
   final TextEditingController _minPriceController = TextEditingController();
   final TextEditingController _maxPriceController = TextEditingController();
+
+  ResultFilter _filter = ResultFilter.all;
 
   final List<String> _recentSearches = [
     'BMW M4',
@@ -75,15 +80,24 @@ class _SearchPageState extends State<SearchPage> {
   bool _hasActiveFilter() {
     return _controller.text.trim().isNotEmpty ||
         _minPriceController.text.trim().isNotEmpty ||
-        _maxPriceController.text.trim().isNotEmpty;
+        _maxPriceController.text.trim().isNotEmpty ||
+        _filter != ResultFilter.all;
   }
 
-  List<Car> _getFilteredCars() {
+  List<Car> _getFilteredCars(List<Car> source) {
     final q = _controller.text.trim().toLowerCase();
     final minPrice = double.tryParse(_minPriceController.text.trim());
     final maxPrice = double.tryParse(_maxPriceController.text.trim());
 
-    return allCars.where((car) {
+    return source.where((car) {
+      final hasVideo = car.videoPath != null && car.videoPath!.isNotEmpty;
+      final matchesFilter = switch (_filter) {
+        ResultFilter.all => true,
+        ResultFilter.video => hasVideo,
+        ResultFilter.listing => !hasVideo,
+      };
+      if (!matchesFilter) return false;
+
       final matchesQuery = q.isEmpty ||
           car.name.toLowerCase().contains(q) ||
           car.year.toLowerCase().contains(q) ||
@@ -121,6 +135,10 @@ class _SearchPageState extends State<SearchPage> {
 
   @override
   Widget build(BuildContext context) {
+    // CarsProvider.cars — полный список опубликованных объявлений
+    // (тот же источник, что использует Главная).
+    final allPublishedCars = context.watch<CarsProvider>().cars;
+
     return Scaffold(
       backgroundColor: const Color(0xFFF5F5F7),
       body: SafeArea(
@@ -131,6 +149,10 @@ class _SearchPageState extends State<SearchPage> {
               focusNode: _focusNode,
               onChanged: () => setState(() {}),
               onSubmitted: _registerSearch,
+            ),
+            _FilterChipsRow(
+              current: _filter,
+              onChanged: (f) => setState(() => _filter = f),
             ),
             PriceFilterWidget(
               minController: _minPriceController,
@@ -143,7 +165,10 @@ class _SearchPageState extends State<SearchPage> {
             ),
             Expanded(
               child: _hasActiveFilter()
-                  ? SearchResultsWidget(results: _getFilteredCars())
+                  ? SearchResultsWidget(
+                      results: _getFilteredCars(allPublishedCars),
+                      filter: _filter,
+                      )
                   : SuggestionsViewWidget(
                       recentSearches: _recentSearches,
                       categories: _categories,
@@ -156,6 +181,71 @@ class _SearchPageState extends State<SearchPage> {
                     ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _FilterChipsRow extends StatelessWidget {
+  final ResultFilter current;
+  final ValueChanged<ResultFilter> onChanged;
+
+  const _FilterChipsRow({required this.current, required this.onChanged});
+
+  @override
+  Widget build(BuildContext context) {
+    final options = const [
+      (ResultFilter.all, 'Всё', Icons.apps_rounded),
+      (ResultFilter.video, 'Только видео', Icons.play_circle_fill_rounded),
+    ];
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+      child: SizedBox(
+        height: 36,
+        child: ListView.separated(
+          scrollDirection: Axis.horizontal,
+          itemCount: options.length,
+          separatorBuilder: (_, __) => const SizedBox(width: 8),
+          itemBuilder: (context, i) {
+            final (value, label, icon) = options[i];
+            final selected = current == value;
+            return GestureDetector(
+              onTap: () => onChanged(value),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 150),
+                padding: const EdgeInsets.symmetric(horizontal: 14),
+                decoration: BoxDecoration(
+                  color: selected ? const Color(0xFF2D1B6E) : Colors.white,
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(
+                    color: selected
+                        ? const Color(0xFF2D1B6E)
+                        : const Color(0xFFE0E0E0),
+                  ),
+                ),
+                alignment: Alignment.center,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(icon,
+                        size: 16,
+                        color: selected ? Colors.white : Colors.black54),
+                    const SizedBox(width: 6),
+                    Text(
+                      label,
+                      style: TextStyle(
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w600,
+                        color: selected ? Colors.white : Colors.black87,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
         ),
       ),
     );

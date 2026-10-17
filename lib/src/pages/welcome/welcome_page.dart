@@ -90,7 +90,7 @@ class _WelcomePageState extends State<WelcomePage>
                               horizontal: 4.w, vertical: 1.h),
                           decoration: BoxDecoration(
                             color: const Color(0xFF1C1C1E),
-                            borderRadius: BorderRadius.circular(30),
+                            borderRadius: BorderRadius.circular(8.w),
                           ),
                           child: Row(
                             mainAxisSize: MainAxisSize.min,
@@ -104,7 +104,7 @@ class _WelcomePageState extends State<WelcomePage>
                                   color: Colors.white,
                                   fontSize: 12.sp,
                                   fontWeight: FontWeight.w600,
-                                  letterSpacing: 0.3,
+                                  letterSpacing: 0.1.w,
                                 ),
                               ),
                             ],
@@ -125,7 +125,7 @@ class _WelcomePageState extends State<WelcomePage>
                                   width: 55.w,
                                   height: 2.5.h,
                                   decoration: BoxDecoration(
-                                    borderRadius: BorderRadius.circular(50),
+                                    borderRadius: BorderRadius.circular(13.w),
                                     color: const Color(0xFF7B72B0)
                                         .withOpacity(0.18),
                                   ),
@@ -159,14 +159,16 @@ class _WelcomePageState extends State<WelcomePage>
                       position: _slideAnim,
                       child: Container(
                         width: double.infinity,
-                        decoration: const BoxDecoration(
+                        decoration: BoxDecoration(
                           color: Colors.white,
                           borderRadius:
-                              BorderRadius.vertical(top: Radius.circular(36)),
+                              BorderRadius.vertical(top: Radius.circular(9.5.w)),
                         ),
                         child: Padding(
                           padding: EdgeInsets.fromLTRB(6.w, 3.5.h, 6.w, 4.h),
-                          child: Column(
+                          child: SingleChildScrollView(
+                            physics: const ClampingScrollPhysics(),
+                            child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               // Drag handle
@@ -176,7 +178,7 @@ class _WelcomePageState extends State<WelcomePage>
                                   height: 0.5.h,
                                   decoration: BoxDecoration(
                                     color: const Color(0xFFE0E0E0),
-                                    borderRadius: BorderRadius.circular(10),
+                                    borderRadius: BorderRadius.circular(3.w),
                                   ),
                                 ),
                               ),
@@ -191,7 +193,7 @@ class _WelcomePageState extends State<WelcomePage>
                                   fontWeight: FontWeight.w800,
                                   color: const Color(0xFF1C1C1E),
                                   height: 1.25,
-                                  letterSpacing: -0.5,
+                                  letterSpacing: -0.15.w,
                                 ),
                               ),
 
@@ -228,7 +230,7 @@ class _WelcomePageState extends State<WelcomePage>
                                 accent: const Color(0xFFE8954A),
                               ),
 
-                              const Spacer(),
+                              SizedBox(height: 2.5.h),
 
                               // CTA button
                               SizedBox(
@@ -248,7 +250,7 @@ class _WelcomePageState extends State<WelcomePage>
                                     foregroundColor: Colors.white,
                                     elevation: 0,
                                     shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(20),
+                                      borderRadius: BorderRadius.circular(5.3.w),
                                     ),
                                   ),
                                   child: Row(
@@ -259,7 +261,7 @@ class _WelcomePageState extends State<WelcomePage>
                                         style: TextStyle(
                                           fontSize: 14.5.sp,
                                           fontWeight: FontWeight.w700,
-                                          letterSpacing: 0.3,
+                                          letterSpacing: 0.1.w,
                                         ),
                                       ),
                                       SizedBox(width: 2.5.w),
@@ -293,6 +295,7 @@ class _WelcomePageState extends State<WelcomePage>
                                 ),
                               ),
                             ],
+                            ),
                           ),
                         ),
                       ),
@@ -326,10 +329,10 @@ class _FeatureItem extends StatelessWidget {
       padding: EdgeInsets.symmetric(horizontal: 4.w, vertical: 1.6.h),
       decoration: BoxDecoration(
         color: const Color(0xFFF7F7F9),
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(4.3.w),
         border: Border.all(
           color: const Color(0xFFEEEEF0),
-          width: 1,
+          width: 0.27.w,
         ),
       ),
       child: Row(
@@ -339,7 +342,7 @@ class _FeatureItem extends StatelessWidget {
             height: 9.w,
             decoration: BoxDecoration(
               color: accent.withOpacity(0.12),
-              borderRadius: BorderRadius.circular(14),
+              borderRadius: BorderRadius.circular(3.7.w),
             ),
             child: Icon(icon, color: accent, size: 18.sp),
           ),

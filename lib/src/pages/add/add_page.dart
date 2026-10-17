@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:new_app/src/pages/autosalon/autoslon_page.dart';
+import 'package:new_app/src/pages/autoslon/autoslon_page.dart';
 import 'package:new_app/src/pages/car_sell/car_sell_page.dart';
 import 'package:responsive_sizer/responsive_sizer.dart';
 
@@ -18,7 +18,7 @@ class _AddPageState extends State<AddPage> with TickerProviderStateMixin {
     super.initState();
     _introController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 800),
+      duration: const Duration(milliseconds: 900),
     )..forward();
   }
 
@@ -29,17 +29,11 @@ class _AddPageState extends State<AddPage> with TickerProviderStateMixin {
   }
 
   void _onServiceTap() {
-    Navigator.push(
-    context,
-    MaterialPageRoute(builder: (_) => const AutoslonPage()),
-    );
+    Navigator.push(context, MaterialPageRoute(builder: (_) => const AutoslonPage()));
   }
 
   void _onCarSaleTap() {
-     Navigator.push(
-    context,
-    MaterialPageRoute(builder: (_) => const CarSellPage()),
-    );
+    Navigator.push(context, MaterialPageRoute(builder: (_) => const CarSellPage()));
   }
 
   /// Builds a fade + slide-up entrance for a child, staggered by [order].
