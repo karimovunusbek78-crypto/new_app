@@ -49,14 +49,16 @@ class SubscriptionsProvider extends ChangeNotifier {
     try {
       if (wasSubscribed) {
         await subRef.delete();
-        await targetUserRef.update({'subscribersCount': FieldValue.increment(-1)});
+        // set+merge instead of update: older accounts may have no users/{uid}
+        // document yet, and update() on a missing document throws.
+        await targetUserRef.set({'subscribersCount': FieldValue.increment(-1)}, SetOptions(merge: true));
       } else {
         await subRef.set({
           'followerUid': uid,
           'targetUid': targetUid,
           'createdAt': FieldValue.serverTimestamp(),
         });
-        await targetUserRef.update({'subscribersCount': FieldValue.increment(1)});
+        await targetUserRef.set({'subscribersCount': FieldValue.increment(1)}, SetOptions(merge: true));
       }
     } catch (_) {
       wasSubscribed ? _subscribedTo.add(targetUid) : _subscribedTo.remove(targetUid);

@@ -1,30 +1,89 @@
-// This is a basic Flutter widget test.
-//
-// To perform an interaction with a widget in your test, use the WidgetTester
-// utility in the flutter_test package. For example, you can send tap and scroll
-// gestures. You can also use WidgetTester to find child widgets in the widget
-// tree, read text, and verify that the values of widget properties are correct.
+// Unit tests for the Car model — the shape of the documents in the
+// Firestore `cars` collection. They run without Firebase.
 
-import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:new_app/main.dart';
+import 'package:new_app/src/pages/home/models/car.dart';
 
 void main() {
-  testWidgets('Counter increments smoke test', (WidgetTester tester) async {
-    // Build our app and trigger a frame.
-    await tester.pumpWidget(const MyApp());
+  test('Car.fromFirestore fills defaults for missing fields', () {
+    final car = Car.fromFirestore('abc', {'name': 'Chevrolet Cobalt'});
 
-    // Verify that our counter starts at 0.
-    expect(find.text('0'), findsOneWidget);
-    expect(find.text('1'), findsNothing);
+    expect(car.id, 'abc');
+    expect(car.name, 'Chevrolet Cobalt');
+    expect(car.price, '');
+    expect(car.photoPaths, isEmpty);
+    expect(car.videoPath, isNull);
+    expect(car.likesCount, 0);
+    expect(car.viewsCount, 0);
+    expect(car.isAutosalonCar, isFalse);
+    expect(car.createdAt, isNull);
+  });
 
-    // Tap the '+' icon and trigger a frame.
-    await tester.tap(find.byIcon(Icons.add));
-    await tester.pump();
+  test('Car.fromFirestore reads stats, media and autosalon fields', () {
+    final created = DateTime(2026, 7, 1, 12);
+    final car = Car.fromFirestore('xyz', {
+      'name': 'Kia K5',
+      'price': '25000',
+      'ownerId': 'u1',
+      'likesCount': 3,
+      'viewsCount': 42,
+      'photoPaths': ['https://example.com/1.jpg', 'https://example.com/2.jpg'],
+      'videoPath': 'https://example.com/v.mp4',
+      'autosalonId': 'u1',
+      'autosalonName': 'Gravitas Auto',
+      'isAutosalonCar': true,
+      'createdAt': Timestamp.fromDate(created),
+    });
 
-    // Verify that our counter has incremented.
-    expect(find.text('0'), findsNothing);
-    expect(find.text('1'), findsOneWidget);
+    expect(car.ownerId, 'u1');
+    expect(car.likesCount, 3);
+    expect(car.viewsCount, 42);
+    expect(car.photoPaths, hasLength(2));
+    expect(car.videoPath, 'https://example.com/v.mp4');
+    expect(car.isAutosalonCar, isTrue);
+    expect(car.autosalonName, 'Gravitas Auto');
+    expect(car.createdAt, created);
+  });
+
+  test('toFirestoreMap writes every field the app reads back', () {
+    const car = Car(
+      id: 'c1',
+      name: 'BYD Song Plus',
+      year: '2024',
+      km: '1000',
+      price: '30000',
+      transmission: 'Автомат',
+      fuelType: 'Электро',
+      engineCapacity: '0',
+      bodyType: 'Кроссовер',
+      color: 'Белый',
+      location: 'Ташкент',
+      ownerId: 'u2',
+      photoPaths: ['https://example.com/a.jpg'],
+    );
+
+    final map = car.toFirestoreMap();
+    expect(map['ownerId'], 'u2');
+    expect(map['photoPaths'], ['https://example.com/a.jpg']);
+    expect(map['createdAt'], isA<FieldValue>());
+
+    final back = Car.fromFirestore('c1', {...map, 'createdAt': null});
+    expect(back.name, car.name);
+    expect(back.price, car.price);
+    expect(back.photoPaths, car.photoPaths);
+  });
+
+  test('copyWith changes only the given counters', () {
+    const car = Car(
+      id: 'c1', name: 'n', year: '', km: '', price: '', transmission: '',
+      fuelType: '', engineCapacity: '', bodyType: '', color: '', location: '',
+      likesCount: 1, viewsCount: 2,
+    );
+    final updated = car.copyWith(likesCount: 5);
+    expect(updated.likesCount, 5);
+    expect(updated.viewsCount, 2);
+    expect(updated.name, 'n');
   });
 }

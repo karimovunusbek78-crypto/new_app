@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:responsive_sizer/responsive_sizer.dart';
 import 'package:new_app/src/authentifications/sign_in/sign_in.dart';
 
@@ -41,6 +42,23 @@ class _SignUpState extends State<SignUp> {
       );
       // Save display name
       await credential.user?.updateDisplayName(_nameController.text.trim());
+
+      // Create the profile document right away: other features update it
+      // (e.g. subscribersCount when someone follows this user), and an
+      // update() on a missing document fails.
+      final uid = credential.user?.uid;
+      if (uid != null) {
+        try {
+          await FirebaseFirestore.instance.collection('users').doc(uid).set({
+            'name': _nameController.text.trim(),
+            'email': _emailController.text.trim(),
+            'subscribersCount': 0,
+            'createdAt': FieldValue.serverTimestamp(),
+          }, SetOptions(merge: true));
+        } catch (_) {
+          // Not fatal: the account exists; the profile is filled in later.
+        }
+      }
 
       // AuthWrapper StreamBuilder detects login → rebuilds to MainNavBar.
       // SignUp was pushed on top of SignIn, so pop both back to the root

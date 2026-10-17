@@ -303,6 +303,10 @@ class _MyAutosalonEntryCard extends StatelessWidget {
                       int totalLikes = 0;
                       for (final doc in docs) {
                         final d = doc.data();
+
+
+
+                        
                         totalViews += (d['viewsCount'] as num?)?.toInt() ?? 0;
                         totalLikes += (d['likesCount'] as num?)?.toInt() ?? 0;
                       }

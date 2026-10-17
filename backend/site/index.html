@@ -1,0 +1,927 @@
+<title>Gravitas Auto Backend</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: workshop-manual docs — sticky chapter rail on the left, one reading column, wide tables scroll in place. */
+:root {
+  --bg: #f6f7f9;
+  --surface: #ffffff;
+  --sunk: #eceff3;
+  --ink: #17202c;
+  --muted: #566273;
+  --line: #d8dde4;
+  --accent: #c2560a;          /* indicator amber */
+  --accent-soft: #fbe9db;
+  --link: #1d4f91;
+  --p0: #b42318; --p0-soft: #fde4e1;
+  --p1: #a15c07; --p1-soft: #fdf0d5;
+  --p2: #2e5aa8; --p2-soft: #e3ebfa;
+  --ok: #1f7a4a;
+  --code-bg: #10161f;
+  --code-ink: #dde3ea;
+  --f-display: "Bricolage Grotesque", "Segoe UI", system-ui, sans-serif;
+  --f-body: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+  --f-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #11151b; --surface: #171d25; --sunk: #1d242e; --ink: #e6eaf0; --muted: #98a3b3; --line: #2a3340;
+    --accent: #f08a3c; --accent-soft: #3a2414; --link: #8fb4ec;
+    --p0: #ff8b7e; --p0-soft: #3d1a17; --p1: #f3b75a; --p1-soft: #3a2a10; --p2: #8fb0f0; --p2-soft: #1b2740;
+    --ok: #5fcf93; --code-bg: #0b0f14; --code-ink: #dde3ea;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #11151b; --surface: #171d25; --sunk: #1d242e; --ink: #e6eaf0; --muted: #98a3b3; --line: #2a3340;
+  --accent: #f08a3c; --accent-soft: #3a2414; --link: #8fb4ec;
+  --p0: #ff8b7e; --p0-soft: #3d1a17; --p1: #f3b75a; --p1-soft: #3a2a10; --p2: #8fb0f0; --p2-soft: #1b2740;
+  --ok: #5fcf93; --code-bg: #0b0f14; --code-ink: #dde3ea;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+body {
+  background: var(--bg); color: var(--ink);
+  font: 400 16px/1.65 var(--f-body);
+  padding-inline: 16px;
+}
+a { color: var(--link); text-underline-offset: 2px; }
+a:focus-visible, button:focus-visible, summary:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 3px; }
+
+.shell { max-width: 1180px; margin: 0 auto; display: grid; grid-template-columns: 230px minmax(0, 1fr); gap: 48px; padding-block: 32px 80px; }
+@media (max-width: 860px) { .shell { grid-template-columns: minmax(0, 1fr); gap: 20px; padding-block: 20px 60px; } }
+
+/* rail */
+.rail { position: sticky; top: calc(env(safe-area-inset-top, 0px) + 24px); align-self: start; font-size: 14px; }
+.rail .brand { font: 700 15px/1.2 var(--f-display); letter-spacing: .01em; margin-bottom: 4px; }
+.rail .proj { font: 400 12px var(--f-mono); color: var(--muted); margin-bottom: 18px; }
+.rail ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; counter-reset: ch; }
+.rail li a { display: flex; gap: 10px; padding: 5px 8px; border-radius: 6px; color: var(--muted); text-decoration: none; }
+.rail li a::before { counter-increment: ch; content: counter(ch, decimal-leading-zero); font: 500 12px/1.9 var(--f-mono); color: var(--line); min-width: 18px; }
+.rail li a:hover { background: var(--sunk); color: var(--ink); }
+.rail li a.on { color: var(--ink); background: var(--sunk); }
+.rail li a.on::before { color: var(--accent); }
+@media (max-width: 860px) {
+  .rail { position: static; }
+  .rail ol { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
+}
+
+main { min-width: 0; }
+.col { max-width: 760px; }
+
+/* hero */
+.hero { padding-bottom: 28px; border-bottom: 1px solid var(--line); margin-bottom: 8px; }
+.eyebrow { font: 500 12px var(--f-mono); letter-spacing: .08em; text-transform: uppercase; color: var(--accent); }
+h1 { font: 700 clamp(34px, 5vw, 52px)/1.04 var(--f-display); letter-spacing: -.015em; margin: 10px 0 14px; text-wrap: balance; }
+.lede { font-size: 18px; color: var(--muted); max-width: 62ch; margin: 0; }
+.facts { display: flex; flex-wrap: wrap; gap: 8px 20px; margin-top: 20px; font-size: 14px; }
+.facts div { display: flex; gap: 8px; align-items: baseline; }
+.facts dt { color: var(--muted); }
+.facts dd { margin: 0; font-family: var(--f-mono); font-size: 13px; }
+
+section { padding-top: 44px; scroll-margin-top: 16px; }
+h2 { font: 700 28px/1.15 var(--f-display); letter-spacing: -.01em; margin: 0 0 12px; text-wrap: balance; display: flex; gap: 12px; align-items: baseline; }
+h2 .n { font: 500 14px var(--f-mono); color: var(--accent); }
+h3 { font: 600 18px/1.3 var(--f-body); margin: 28px 0 8px; text-wrap: balance; }
+h3 code { font-size: 16px; }
+p, li { max-width: 68ch; }
+p { margin: 0 0 12px; }
+ul, ol.steps { padding-left: 1.2em; margin: 0 0 12px; }
+li { margin: 4px 0; }
+code { font: 400 .88em var(--f-mono); background: var(--sunk); padding: 1px 5px; border-radius: 4px; overflow-wrap: anywhere; }
+.muted { color: var(--muted); }
+.small { font-size: 14px; }
+
+/* callouts */
+.note { border: 1px solid var(--line); background: var(--surface); border-radius: 10px; padding: 14px 16px; margin: 16px 0; font-size: 15px; }
+.note.warn { border-color: var(--p0); background: var(--p0-soft); }
+.note strong { font-weight: 600; }
+.note p:last-child { margin: 0; }
+
+/* tables */
+.tw { overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); margin: 12px 0 18px; }
+table { border-collapse: collapse; width: 100%; font-size: 14px; }
+th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font: 500 12px var(--f-mono); text-transform: uppercase; letter-spacing: .06em; color: var(--muted); background: var(--sunk); white-space: nowrap; }
+tr:last-child td { border-bottom: 0; }
+td:first-child { white-space: nowrap; }
+td.type { font-family: var(--f-mono); font-size: 13px; color: var(--muted); white-space: nowrap; }
+
+/* code */
+.code { position: relative; margin: 12px 0 18px; }
+.code pre { margin: 0; background: var(--code-bg); color: var(--code-ink); border-radius: 10px; padding: 16px 18px; overflow-x: auto; font: 400 13px/1.6 var(--f-mono); tab-size: 2; }
+.code .lang { position: absolute; top: 8px; left: 14px; font: 500 11px var(--f-mono); color: #7d8796; text-transform: uppercase; letter-spacing: .08em; }
+.code pre.labelled { padding-top: 30px; }
+.copy { position: absolute; top: 8px; right: 8px; font: 500 12px var(--f-body); background: #233040; color: #dde3ea; border: 1px solid #344458; border-radius: 6px; padding: 4px 10px; cursor: pointer; }
+.copy:hover { background: #2c3c50; }
+details.file { border: 1px solid var(--line); border-radius: 10px; background: var(--surface); margin: 12px 0; }
+details.file > summary { cursor: pointer; padding: 12px 16px; font-weight: 600; display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+details.file > summary span { font: 400 13px var(--f-mono); color: var(--muted); }
+details.file .code { margin: 0 12px 12px; }
+
+/* priority list */
+.issues { display: grid; gap: 10px; margin: 14px 0; }
+.issue { display: grid; grid-template-columns: 44px minmax(0, 1fr); gap: 14px; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; }
+.pill { font: 600 12px/1 var(--f-mono); padding: 5px 0; border-radius: 999px; text-align: center; height: max-content; }
+.pill.p0 { color: var(--p0); background: var(--p0-soft); }
+.pill.p1 { color: var(--p1); background: var(--p1-soft); }
+.pill.p2 { color: var(--p2); background: var(--p2-soft); }
+.issue h4 { margin: 0 0 4px; font: 600 16px/1.35 var(--f-body); }
+.issue p { margin: 0; font-size: 15px; color: var(--muted); }
+.issue p + p { margin-top: 6px; }
+.filters { display: flex; gap: 8px; flex-wrap: wrap; margin: 6px 0 4px; }
+.filters button { font: 500 13px var(--f-body); border: 1px solid var(--line); background: var(--surface); color: var(--ink); padding: 5px 12px; border-radius: 999px; cursor: pointer; }
+.filters button[aria-pressed="true"] { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+
+/* diagrams */
+.diagram { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 14px; overflow-x: auto; margin: 14px 0; }
+.diagram pre.mermaid { margin: 0; background: transparent; text-align: center; }
+.caption { font-size: 13px; color: var(--muted); margin-top: -6px; }
+
+/* checklist */
+.check { list-style: none; padding: 0; display: grid; gap: 6px; }
+.check li { max-width: none; display: flex; gap: 10px; align-items: flex-start; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; margin: 0; }
+.check input { margin-top: 5px; accent-color: var(--accent); width: 16px; height: 16px; flex: none; }
+.check label { cursor: pointer; }
+.check li.done label { color: var(--muted); text-decoration: line-through; text-decoration-color: var(--line); }
+.progress { font: 500 13px var(--f-mono); color: var(--muted); display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+.bar { flex: 1; min-width: 120px; height: 6px; background: var(--sunk); border-radius: 99px; overflow: hidden; }
+.bar i { display: block; height: 100%; width: 0; background: var(--ok); transition: width .25s; }
+.reset { font: 500 12px var(--f-body); background: none; border: 1px solid var(--line); color: var(--muted); border-radius: 6px; padding: 3px 9px; cursor: pointer; }
+
+/* phases */
+.phases { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin: 14px 0; }
+@media (max-width: 640px) { .phases { grid-template-columns: minmax(0, 1fr); } }
+.phase { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 16px; }
+.phase .tag { font: 500 12px var(--f-mono); color: var(--accent); text-transform: uppercase; letter-spacing: .08em; }
+.phase h4 { margin: 4px 0 8px; font: 700 18px var(--f-display); }
+.phase ul { margin: 0; font-size: 15px; }
+
+footer { margin-top: 56px; padding-top: 18px; border-top: 1px solid var(--line); font-size: 13px; color: var(--muted); }
+</style>
+
+<div class="shell">
+  <nav class="rail" aria-label="Chapters">
+    <div class="brand">Gravitas Auto · Backend</div>
+    <div class="proj">firebase: gravitas-auto</div>
+    <ol id="toc">
+      <li><a href="#overview">Overview</a></li>
+      <li><a href="#setup">Access &amp; setup</a></li>
+      <li><a href="#data">Firestore data</a></li>
+      <li><a href="#storage">Storage files</a></li>
+      <li><a href="#permissions">Publish approval</a></li>
+      <li><a href="#problems">Problems to fix</a></li>
+      <li><a href="#rules">Security rules</a></li>
+      <li><a href="#functions">Cloud Functions</a></li>
+      <li><a href="#push">Push notifications</a></li>
+      <li><a href="#scale">Search &amp; scale</a></li>
+      <li><a href="#checklist">Release checklist</a></li>
+    </ol>
+  </nav>
+
+  <main>
+    <div class="col">
+      <header class="hero">
+        <div class="eyebrow">Handbook for the backend team</div>
+        <h1>Building the backend for the Gravitas Auto car marketplace</h1>
+        <p class="lede">The Flutter app talks straight to Firebase; there is no server of our own yet. This page explains every collection and file the app uses, what is unsafe today, and what to build, in order.</p>
+        <dl class="facts">
+          <div><dt>App</dt><dd>Flutter · repo new_app, branch dev</dd></div>
+          <div><dt>Backend</dt><dd>Firebase Auth · Firestore · Storage</dd></div>
+          <div><dt>Users</dt><dd>Uzbekistan, UI in Russian</dd></div>
+        </dl>
+      </header>
+
+      <section id="overview">
+        <h2><span class="n">01</span>Overview</h2>
+        <p>People browse used cars in a list and in a vertical video feed. They like, save and favourite cars, comment and reply, follow sellers, and get in-app notifications. Two kinds of sellers publish:</p>
+        <ul>
+          <li><strong>Private seller</strong>: one car at a time ("Продажа авто").</li>
+          <li><strong>Autosalon</strong>: a dealer page with logo, gallery, several locations on a map, and many cars.</li>
+        </ul>
+        <p>Both need an admin's approval for each publication (chapter 05).</p>
+
+        <h3>How the pieces connect</h3>
+        <div class="diagram">
+<pre class="mermaid">
+flowchart LR
+  App["Flutter app<br/>(Android · iOS · web)"]
+  Auth["Firebase Auth<br/>email + password"]
+  FS[("Cloud Firestore<br/>all data")]
+  ST[("Firebase Storage<br/>photos · videos")]
+  Geo["Photon / Nominatim<br/>address search"]
+  Fn["Cloud Functions<br/>(to build)"]
+  FCM["FCM push<br/>(to build)"]
+  Admin["Admin panel<br/>(to build)"]
+  App --> Auth
+  App --> FS
+  App --> ST
+  App --> Geo
+  FS -. triggers .-> Fn
+  Fn -. writes counters,<br/>notifications .-> FS
+  Fn -. sends .-> FCM
+  FCM -.-> App
+  Admin -. grantPublish .-> Fn
+</pre>
+        </div>
+        <p class="caption">Solid lines exist today. Dashed lines are what this handbook asks you to build.</p>
+
+        <div class="note">
+          <p><strong>The one rule for everything below:</strong> the app reads these field names and types exactly. Never rename a field, change its type, or move a path without changing the app in the same release. Agree each change with the Flutter developers first.</p>
+        </div>
+      </section>
+
+      <section id="setup">
+        <h2><span class="n">02</span>Access &amp; setup</h2>
+        <ol class="steps">
+          <li>Ask the project owner to add your Google account in <strong>Firebase console → Project settings → Users and permissions</strong> for project <code>gravitas-auto</code>.</li>
+          <li>Install the tools. You need Node 18+ and, for the local emulator, Java 21+.</li>
+        </ol>
+        <div class="code"><span class="lang">bash</span><button class="copy" type="button">Copy</button><pre class="labelled">npm install -g firebase-tools
+firebase login
+git clone https://github.com/karimovunusbek78-crypto/new_app.git
+cd new_app &amp;&amp; git checkout dev
+firebase use gravitas-auto</pre></div>
+        <p>The ready-made backend files live in the repo, in the <code>backend/</code> folder:</p>
+        <div class="tw"><table>
+          <thead><tr><th>File</th><th>What it is</th></tr></thead>
+          <tbody>
+            <tr><td><code>backend/firestore.rules</code></td><td>Firestore security rules matching the current app (chapter 07)</td></tr>
+            <tr><td><code>backend/storage.rules</code></td><td>Storage rules: own folder only, size limits</td></tr>
+            <tr><td><code>backend/firestore.indexes.json</code></td><td>Composite indexes the app's queries need</td></tr>
+            <tr><td><code>backend/README.md</code></td><td>This handbook as plain text</td></tr>
+          </tbody>
+        </table></div>
+        <p>Add these lines to <code>firebase.json</code>, next to the existing <code>"flutter"</code> key, so the CLI deploys them:</p>
+        <div class="code"><span class="lang">json</span><button class="copy" type="button">Copy</button><pre class="labelled">"firestore": {
+  "rules": "backend/firestore.rules",
+  "indexes": "backend/firestore.indexes.json"
+},
+"storage": { "rules": "backend/storage.rules" }</pre></div>
+        <p>Other outside services the app calls directly: <code>photon.komoot.io</code> and <code>nominatim.openstreetmap.org</code> for addresses, plus <code>wa.me</code>, <code>t.me/automarket_support</code> and phone links for contacting support and sellers.</p>
+      </section>
+
+      <section id="data">
+        <h2><span class="n">03</span>Firestore data</h2>
+        <p>Every collection the app touches, with the screen that writes it. Paths are relative to <code>lib/src/</code>.</p>
+
+        <h3><code>users/{uid}</code>: profile</h3>
+        <div class="tw"><table>
+          <thead><tr><th>Field</th><th>Type</th><th>Written by</th></tr></thead>
+          <tbody>
+            <tr><td><code>name</code>, <code>email</code>, <code>phone</code>, <code>telegram</code></td><td class="type">string</td><td>Sign-up, profile edit (<code>pages/profile/profile_page.dart</code>)</td></tr>
+            <tr><td><code>avatarUrl</code></td><td class="type">string · URL</td><td>Profile page, user stats page</td></tr>
+            <tr><td><code>subscribersCount</code></td><td class="type">int</td><td><strong>Other users</strong> when they follow / unfollow</td></tr>
+            <tr><td><code>createdAt</code>, <code>updatedAt</code></td><td class="type">timestamp</td><td>Sign-up, profile save</td></tr>
+            <tr><td><code>canPublish</code></td><td class="type">bool</td><td>Legacy admin flag; replaced by <code>publish_permissions</code></td></tr>
+          </tbody>
+        </table></div>
+        <p class="small muted">Sign-up now creates this document. Accounts made before that may have none; the app creates it on the first follow. Run a one-time backfill so every Auth user has one.</p>
+        <div class="tw"><table>
+          <thead><tr><th>Sub-collection</th><th>Fields</th><th>Notes</th></tr></thead>
+          <tbody>
+            <tr><td><code>favorites/{carId}</code></td><td><code>addedAt</code></td><td>Private list</td></tr>
+            <tr><td><code>savedCars/{carId}</code></td><td><code>savedAt</code></td><td>Private list; mirrors <code>cars/{id}/savedBy</code></td></tr>
+            <tr><td><code>history/{autoId}</code></td><td><code>changes {field: {from, to}}</code>, <code>changedBy</code>, <code>changedAt</code></td><td>Append-only log of profile edits</td></tr>
+            <tr><td><code>notifications/{autoId}</code></td><td><code>type</code> (like · comment · reply · subscribe), <code>fromUid</code>, <code>fromName</code>, <code>fromAvatarUrl</code>, <code>carId</code>, <code>carName</code>, <code>commentId</code>, <code>text</code>, <code>createdAt</code>, <code>read</code></td><td>Written by <strong>other users' apps</strong> (<code>notification_sender.dart</code>); the owner marks <code>read</code></td></tr>
+          </tbody>
+        </table></div>
+
+        <h3><code>cars/{carId}</code>: listings</h3>
+        <p>Model: <code>pages/home/models/car.dart</code>.</p>
+        <div class="tw"><table>
+          <thead><tr><th>Field</th><th>Type</th><th>Notes</th></tr></thead>
+          <tbody>
+            <tr><td><code>name</code>, <code>price</code>, <code>year</code>, <code>km</code>, <code>engineCapacity</code>, <code>ownersCount</code></td><td class="type">string</td><td>Free text from the form, even the numbers (see chapter 10)</td></tr>
+            <tr><td><code>transmission</code>, <code>fuelType</code>, <code>bodyType</code>, <code>driveType</code>, <code>condition</code>, <code>color</code>, <code>location</code></td><td class="type">string</td><td>Picked from lists in Russian, e.g. «Автомат», «Бензин»</td></tr>
+            <tr><td><code>description</code>, <code>changesDescription</code>, <code>phone</code></td><td class="type">string</td><td></td></tr>
+            <tr><td><code>priceNegotiable</code>, <code>contactWhatsapp</code>, <code>contactTelegram</code></td><td class="type">bool</td><td></td></tr>
+            <tr><td><code>photoPaths</code></td><td class="type">string[]</td><td>Storage download URLs</td></tr>
+            <tr><td><code>videoPath</code></td><td class="type">string | null</td><td>Storage download URL</td></tr>
+            <tr><td><code>ownerId</code></td><td class="type">string</td><td>Seller uid</td></tr>
+            <tr><td><code>likesCount</code>, <code>viewsCount</code>, <code>savesCount</code></td><td class="type">int</td><td>Changed by <strong>any</strong> user's app with <code>increment(±1)</code></td></tr>
+            <tr><td><code>autosalonId</code>, <code>autosalonName</code>, <code>autosalonLogoUrl</code></td><td class="type">string | null</td><td>Dealer cars only</td></tr>
+            <tr><td><code>isAutosalonCar</code></td><td class="type">bool</td><td></td></tr>
+            <tr><td><code>createdAt</code></td><td class="type">timestamp</td><td>Home list orders by this</td></tr>
+          </tbody>
+        </table></div>
+        <p class="small muted">A private seller's car id is <code>DateTime.now().millisecondsSinceEpoch</code>; dealer cars get an auto id.</p>
+        <div class="tw"><table>
+          <thead><tr><th>Sub-collection</th><th>Fields</th><th>Notes</th></tr></thead>
+          <tbody>
+            <tr><td><code>likedBy/{uid}</code></td><td><code>uid</code>, <code>likedAt</code></td><td>Queried with <code>collectionGroup('likedBy').where('uid', ==, me)</code></td></tr>
+            <tr><td><code>savedBy/{uid}</code></td><td><code>savedAt</code></td><td></td></tr>
+            <tr><td><code>viewLog/{autoId}</code></td><td><code>viewerUid</code>, <code>viewedAt</code></td><td>One document per view; "views today" queries <code>viewedAt</code></td></tr>
+            <tr><td><code>deleteLog/{autoId}</code></td><td><code>reason</code>, <code>deletedBy</code>, <code>deletedAt</code></td><td>Written just before the car is deleted</td></tr>
+            <tr><td><code>comments/{autoId}</code></td><td><code>text</code>, <code>uid</code>, <code>authorName</code>, <code>authorAvatarUrl</code>, <code>createdAt</code>, <code>pinned</code>, <code>editedAt</code></td><td>Author edits; car owner pins; author or car owner deletes</td></tr>
+            <tr><td><code>comments/{cid}/replies/{autoId}</code></td><td>Same as a comment + <code>carId</code>, no <code>pinned</code></td><td></td></tr>
+          </tbody>
+        </table></div>
+
+        <h3><code>subscriptions/{followerUid}_{targetUid}</code></h3>
+        <p>Fields <code>followerUid</code>, <code>targetUid</code>, <code>createdAt</code>. The follower creates and deletes it, and their app also changes <code>users/{target}.subscribersCount</code>.</p>
+
+        <h3><code>autosalons/{ownerUid}</code>: dealer page</h3>
+        <p>Fields <code>ownerId</code>, <code>name</code>, <code>tagline</code>, <code>yearsOnMarket</code>, <code>logoUrl</code>, <code>description</code>, <code>phone</code>, <code>photoUrls[]</code>, <code>videoUrl</code>, <code>carsCount</code>, <code>locationsCount</code>, <code>createdAt</code>, <code>updatedAt</code>. Sub-collection <code>locations/{id}</code>: <code>city</code>, <code>address</code>, <code>lat</code>, <code>lng</code>, <code>photoUrls[]</code>, <code>createdAt</code>.</p>
+        <p>Written by the first publish (<code>pages/autoslon/autoslon_publish/</code>) and by the dealer dashboard (<code>video/video page/profile/autosalon_stats_page.dart</code>), which edits the profile, adds and removes locations, and adds cars.</p>
+
+        <h3><code>publish_permissions/{uid}</code></h3>
+        <p>See the next chapter.</p>
+      </section>
+
+      <section id="storage">
+        <h2><span class="n">04</span>Storage files</h2>
+        <p>The app stores the full download URL (with token) in Firestore, not the path.</p>
+        <div class="tw"><table>
+          <thead><tr><th>Path</th><th>Content</th><th>Limit in rules</th></tr></thead>
+          <tbody>
+            <tr><td><code>avatars/{uid}.{ext}</code></td><td>User avatar; the old file is deleted when replaced</td><td>10 MB</td></tr>
+            <tr><td><code>cars/{ownerUid}/{carId}/photo_{n}.jpg</code></td><td>Car photos</td><td>15 MB each</td></tr>
+            <tr><td><code>cars/{ownerUid}/{carId}/video.mp4</code></td><td>Car video</td><td>300 MB</td></tr>
+            <tr><td><code>autosalons/{uid}/logo_{ms}.jpg</code></td><td>Dealer logo</td><td rowspan="3">300 MB</td></tr>
+            <tr><td><code>autosalons/{uid}/gallery/…</code></td><td>Dealer photos and video</td></tr>
+            <tr><td><code>autosalons/{uid}/locations/{id}/…</code></td><td>Location photos</td></tr>
+          </tbody>
+        </table></div>
+      </section>
+
+      <section id="permissions">
+        <h2><span class="n">05</span>Publish approval</h2>
+        <p>Every publication (one car, or one autosalon publish) needs an admin's approval. The state lives in one document per user (<code>pages/autoslon/permission/publish_permission.dart</code>):</p>
+        <div class="code"><span class="lang">firestore</span><button class="copy" type="button">Copy</button><pre class="labelled">publish_permissions/{uid} {
+  autoslonRequested : bool       // user asked to open an autosalon
+  autoslonGranted   : bool       // ADMIN sets true to approve one publish
+  carsellRequested  : bool       // user asked to sell one car
+  carsellGranted    : bool       // ADMIN sets true to approve one listing
+  updatedAt         : timestamp
+}</pre></div>
+        <div class="diagram">
+<pre class="mermaid">
+sequenceDiagram
+  actor U as User
+  participant A as App
+  participant DB as publish_permissions/{uid}
+  actor S as Admin / support
+  U->>A: Opens "Sell a car"
+  A->>U: Shows WhatsApp, Telegram, phone buttons
+  U->>A: Taps a contact button
+  A->>DB: carsellRequested = true
+  U->>S: Talks to support
+  S->>DB: carsellGranted = true (console today)
+  DB-->>A: Live update, form opens
+  U->>A: Fills the form, publishes
+  A->>DB: carsellGranted = false, carsellRequested = false
+</pre>
+        </div>
+        <h3>How an admin approves today</h3>
+        <ol class="steps">
+          <li>Get the user's ID. The Telegram button sends «Мой ID: …» with it.</li>
+          <li>Firebase console → Firestore → <code>publish_permissions</code> → open the document with that ID.</li>
+          <li>Set <code>carsellGranted</code> (car) or <code>autoslonGranted</code> (autosalon) to <code>true</code>. The user's screen updates by itself.</li>
+        </ol>
+        <div class="note warn">
+          <p><strong>Today a user can approve themselves.</strong> The app writes this document, so a modified app can set <code>carsellGranted: true</code>. The rules in chapter 07 allow only admins to set a <code>…Granted</code> flag to <code>true</code>. Give admins the custom claim below, then build a small admin page that calls a <code>grantPublish</code> function (chapter 08) instead of editing the console.</p>
+        </div>
+        <div class="code"><span class="lang">node · run once, locally</span><button class="copy" type="button">Copy</button><pre class="labelled">// npm i firebase-admin; use a service-account key, never commit it
+const admin = require('firebase-admin');
+admin.initializeApp({ credential: admin.credential.cert(require('./service-account.json')) });
+admin.auth().setCustomUserClaims('ADMIN_UID_HERE', { admin: true })
+  .then(() => console.log('admin claim set; the admin must sign out and back in'));</pre></div>
+      </section>
+
+      <section id="problems">
+        <h2><span class="n">06</span>Problems to fix</h2>
+        <p>Found by reading the app's code. Work top to bottom.</p>
+        <div class="filters" role="group" aria-label="Filter by priority">
+          <button type="button" data-f="all" aria-pressed="true">All 17</button>
+          <button type="button" data-f="p0" aria-pressed="false">P0 security</button>
+          <button type="button" data-f="p1" aria-pressed="false">P1 correctness</button>
+          <button type="button" data-f="p2" aria-pressed="false">P2 scale &amp; quality</button>
+        </div>
+        <div class="issues" id="issues">
+          <div class="issue" data-p="p0"><span class="pill p0">P0</span><div><h4>No security rules in the repo</h4><p>Nobody can see what protects the live database. In "test mode" it is either open to anyone or starts rejecting everything when the test period ends. Check Firestore → Rules and Storage → Rules in the console today, then deploy the rules from chapter 07.</p></div></div>
+          <div class="issue" data-p="p0"><span class="pill p0">P0</span><div><h4>Users can approve their own publications</h4><p>The <code>…Granted</code> flags are written by the app. Fixed by the new rules; long term by the <code>grantPublish</code> function.</p></div></div>
+          <div class="issue" data-p="p0"><span class="pill p0">P0</span><div><h4>Clients write other people's data</h4><p>Any user can change any car's <code>likesCount</code> / <code>viewsCount</code> / <code>savesCount</code>, any user's <code>subscribersCount</code>, and create notifications for anyone. Phase 1 rules limit this to steps of ±1; phase 2 moves it to Cloud Functions.</p></div></div>
+          <div class="issue" data-p="p0"><span class="pill p0">P0</span><div><h4>No admin role</h4><p>Mark admins with the custom claim <code>admin: true</code> (chapter 05). The rules give admins full access.</p></div></div>
+          <div class="issue" data-p="p1"><span class="pill p1">P1</span><div><h4>The permission is used up by the app</h4><p>If the app crashes right after publishing, the permission stays and can be used again. Consume it in a function when <code>cars/{id}</code> or <code>autosalons/{uid}</code> is created.</p></div></div>
+          <div class="issue" data-p="p1"><span class="pill p1">P1</span><div><h4>Deleting a car leaves junk behind</h4><p>Its Storage files, its <code>likedBy</code>, <code>savedBy</code>, <code>comments</code> + <code>replies</code> and <code>viewLog</code>, and entries in other users' <code>favorites</code> and <code>savedCars</code> all stay. Add a cleanup function on car delete. Move <code>deleteLog</code> to a top-level <code>deleted_cars</code> collection so it stays findable.</p></div></div>
+          <div class="issue" data-p="p1"><span class="pill p1">P1</span><div><h4>No push notifications</h4><p>Notifications only appear while the app is open. Chapter 09 explains how to add them.</p></div></div>
+          <div class="issue" data-p="p1"><span class="pill p1">P1</span><div><h4>Autosalon <code>createdAt</code> is overwritten</h4><p>Every publish writes <code>createdAt: serverTimestamp()</code> with merge, so the dealer's start date keeps moving. Set it only when the document is created.</p></div></div>
+          <div class="issue" data-p="p1"><span class="pill p1">P1</span><div><h4>Autosalon publish recreates all locations</h4><p>All location documents are deleted and added again on every publish, so their ids change. Update them in place.</p></div></div>
+          <div class="issue" data-p="p2"><span class="pill p2">P2</span><div><h4>The app loads every car at once</h4><p><code>CarsProvider</code> streams the whole <code>cars</code> collection, and search and filters run on the phone. Fine for hundreds of cars, not thousands. See chapter 10.</p></div></div>
+          <div class="issue" data-p="p2"><span class="pill p2">P2</span><div><h4>Price, year and mileage are strings</h4><p>They can't be sorted or filtered in Firestore. Add numeric copies <code>priceNum</code>, <code>yearNum</code>, <code>kmNum</code> filled by a function.</p></div></div>
+          <div class="issue" data-p="p2"><span class="pill p2">P2</span><div><h4><code>viewLog</code> grows forever</h4><p>One document per view. Add a TTL policy on <code>viewedAt</code> (for example 90 days) or roll views up into daily counters.</p></div></div>
+          <div class="issue" data-p="p2"><span class="pill p2">P2</span><div><h4>Car ids from a millisecond timestamp</h4><p>Two people publishing in the same millisecond overwrite each other. Use <code>collection('cars').doc().id</code>.</p></div></div>
+          <div class="issue" data-p="p2"><span class="pill p2">P2</span><div><h4>Geocoding calls Nominatim directly</h4><p>Nominatim's usage policy requires a real User-Agent and at most one request per second for the whole app. Put a caching proxy function in front, or use a paid geocoder.</p></div></div>
+          <div class="issue" data-p="p2"><span class="pill p2">P2</span><div><h4>Support contacts are hard-coded</h4><p>The WhatsApp number, <code>t.me/automarket_support</code> and phone number are in the app code. Move them to Remote Config or a <code>config/support</code> document.</p></div></div>
+          <div class="issue" data-p="p2"><span class="pill p2">P2</span><div><h4>Legacy <code>users.canPublish</code></h4><p>Still read by <code>CarSellPermissionNotifier</code>. Remove it once <code>publish_permissions</code> is the only source.</p></div></div>
+          <div class="issue" data-p="p2"><span class="pill p2">P2</span><div><h4>No App Check</h4><p>Turn on App Check (Play Integrity on Android, DeviceCheck / App Attest on iOS) so only the real app can call Firebase.</p></div></div>
+        </div>
+      </section>
+
+      <section id="rules">
+        <h2><span class="n">07</span>Security rules</h2>
+        <div class="phases">
+          <div class="phase"><div class="tag">Phase 1 · now</div><h4>Rules that fit the current app</h4><ul>
+            <li>Signed-in users read listings, profiles, comments, dealers</li>
+            <li>You write only your own profile, lists, likes, comments, cars, dealer page</li>
+            <li>Counters move only by ±1 (views by +1)</li>
+            <li>Only admins set <code>…Granted = true</code></li>
+            <li>A car needs an active permission, or an existing autosalon</li>
+          </ul></div>
+          <div class="phase"><div class="tag">Phase 2 · after chapter 08</div><h4>Lock counters and notifications</h4><ul>
+            <li>Functions own all counters and notifications</li>
+            <li>Remove the <code>bumped(…)</code> update branches</li>
+            <li>Remove the notifications <code>create</code> rule</li>
+            <li>The app stops writing those fields in the same release</li>
+          </ul></div>
+        </div>
+        <div class="note warn"><p><strong>Test before deploying.</strong> A wrong rule breaks the app for everyone at once. These rules have not run in the emulator yet.</p></div>
+        <ol class="steps">
+          <li>Start the emulators: <code>firebase emulators:start --only auth,firestore,storage</code></li>
+          <li>In a debug build, point the app at them in <code>main.dart</code> right after <code>Firebase.initializeApp</code>:</li>
+        </ol>
+        <div class="code"><span class="lang">dart · debug only</span><button class="copy" type="button">Copy</button><pre class="labelled">if (kDebugMode) {
+  await FirebaseAuth.instance.useAuthEmulator('localhost', 9099);
+  FirebaseFirestore.instance.useFirestoreEmulator('localhost', 8080);
+  await FirebaseStorage.instance.useStorageEmulator('localhost', 9199);
+}</pre></div>
+        <ol class="steps" start="3">
+          <li>Go through the whole checklist in chapter 11 with two test accounts.</li>
+          <li>In the console's <strong>Rules Playground</strong>, confirm a normal user can't set <code>carsellGranted: true</code>, edit another user's car, or read another user's notifications.</li>
+          <li>Deploy, and keep the previous version in the console's rules history so you can roll back in one click:</li>
+        </ol>
+        <div class="code"><span class="lang">bash</span><button class="copy" type="button">Copy</button><pre class="labelled">firebase deploy --only firestore:rules,firestore:indexes,storage</pre></div>
+
+        <details class="file">
+          <summary>backend/firestore.rules <span>full file</span></summary>
+          <div class="code"><button class="copy" type="button">Copy</button><pre>rules_version = '2';
+
+// Firestore security rules for the new_app (Firebase project: gravitas-auto).
+// Phase 1: they allow exactly what the current app version does, and block
+// everything else. See backend/README.md, sections 5 and 6.
+// Admins = accounts with the custom claim {admin: true}.
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() { return request.auth != null; }
+    function me() { return request.auth.uid; }
+    function isAdmin() { return signedIn() &amp;&amp; request.auth.token.admin == true; }
+    function docPath(path) { return /databases/$(database)/documents/$(path); }
+
+    // Only these keys differ between the stored and the written document.
+    function onlyChanges(keys) {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(keys);
+    }
+    function changesAny(keys) {
+      return request.resource.data.diff(resource.data).affectedKeys().hasAny(keys);
+    }
+    // A counter moved by exactly +1 or -1 (FieldValue.increment from the app).
+    function bumped(field) {
+      return request.resource.data[field] is int
+        &amp;&amp; (request.resource.data[field] - resource.data.get(field, 0)) in [1, -1];
+    }
+    // Admin approved this user for one publication of the given type
+    // ('carsell' or 'autoslon').
+    function granted(type) {
+      return exists(docPath('publish_permissions/' + me()))
+        &amp;&amp; get(docPath('publish_permissions/' + me())).data.get(type + 'Granted', false) == true;
+    }
+    function carOwner(carId) {
+      return get(docPath('cars/' + carId)).data.ownerId == me();
+    }
+    function validText(t) { return t is string &amp;&amp; t.size() &gt; 0 &amp;&amp; t.size() &lt;= 2000; }
+
+    // Admins can do anything (admin panel / support tools).
+    match /{document=**} {
+      allow read, write: if isAdmin();
+    }
+
+    // ------------------------------------------------------------ users
+    match /users/{uid} {
+      allow read: if signedIn();
+      // Own profile. canPublish is a legacy admin flag: users may not set it.
+      allow create: if signedIn() &amp;&amp; me() == uid
+        &amp;&amp; !request.resource.data.keys().hasAny(['canPublish']);
+      // Someone follows a user whose profile document does not exist yet.
+      allow create: if signedIn() &amp;&amp; me() != uid
+        &amp;&amp; request.resource.data.keys().hasOnly(['subscribersCount'])
+        &amp;&amp; request.resource.data.subscribersCount in [1, -1];
+      allow update: if signedIn() &amp;&amp; (
+        (me() == uid &amp;&amp; !changesAny(['canPublish', 'subscribersCount']))
+        || (onlyChanges(['subscribersCount']) &amp;&amp; bumped('subscribersCount'))
+      );
+
+      match /favorites/{carId} { allow read, write: if signedIn() &amp;&amp; me() == uid; }
+      match /savedCars/{carId} { allow read, write: if signedIn() &amp;&amp; me() == uid; }
+
+      // Profile change log: append-only.
+      match /history/{id} {
+        allow read: if signedIn() &amp;&amp; me() == uid;
+        allow create: if signedIn() &amp;&amp; me() == uid &amp;&amp; request.resource.data.changedBy == me();
+      }
+
+      match /notifications/{id} {
+        allow read, delete: if signedIn() &amp;&amp; me() == uid;
+        allow update: if signedIn() &amp;&amp; me() == uid &amp;&amp; onlyChanges(['read']);
+        // Phase 1: other users' apps write notifications. Phase 2 moves this
+        // to Cloud Functions and this rule is removed.
+        allow create: if signedIn() &amp;&amp; me() != uid
+          &amp;&amp; request.resource.data.fromUid == me()
+          &amp;&amp; request.resource.data.type in ['like', 'comment', 'reply', 'subscribe']
+          &amp;&amp; request.resource.data.read == false;
+      }
+    }
+
+    // ------------------------------------------------------------ cars
+    match /cars/{carId} {
+      allow read: if signedIn();
+      allow create: if signedIn()
+        &amp;&amp; request.resource.data.ownerId == me()
+        &amp;&amp; request.resource.data.get('likesCount', 0) == 0
+        &amp;&amp; request.resource.data.get('viewsCount', 0) == 0
+        &amp;&amp; request.resource.data.get('savesCount', 0) == 0
+        &amp;&amp; (
+          granted('carsell') || granted('autoslon')
+          // an existing autosalon adds a car from its dashboard
+          || (request.resource.data.get('isAutosalonCar', false) == true
+              &amp;&amp; request.resource.data.autosalonId == me()
+              &amp;&amp; exists(docPath('autosalons/' + me())))
+        );
+      allow update: if signedIn() &amp;&amp; (
+        (resource.data.ownerId == me()
+          &amp;&amp; !changesAny(['ownerId', 'likesCount', 'viewsCount', 'savesCount', 'createdAt']))
+        || (onlyChanges(['likesCount']) &amp;&amp; bumped('likesCount'))
+        || (onlyChanges(['savesCount']) &amp;&amp; bumped('savesCount'))
+        || (onlyChanges(['viewsCount'])
+            &amp;&amp; request.resource.data.viewsCount == resource.data.get('viewsCount', 0) + 1)
+      );
+      allow delete: if signedIn() &amp;&amp; resource.data.ownerId == me();
+
+      match /likedBy/{uid} {
+        allow read: if signedIn();
+        allow create: if signedIn() &amp;&amp; me() == uid &amp;&amp; request.resource.data.uid == uid;
+        allow delete: if signedIn() &amp;&amp; me() == uid;
+      }
+      match /savedBy/{uid} {
+        allow read: if signedIn();
+        allow create, delete: if signedIn() &amp;&amp; me() == uid;
+      }
+      match /viewLog/{id} {
+        allow read: if signedIn() &amp;&amp; carOwner(carId);
+        allow create: if signedIn() &amp;&amp; request.resource.data.viewerUid == me();
+      }
+      // Written by the owner right before deleting the car; kept for audit.
+      match /deleteLog/{id} {
+        allow create: if signedIn() &amp;&amp; carOwner(carId) &amp;&amp; request.resource.data.deletedBy == me();
+      }
+
+      match /comments/{commentId} {
+        allow read: if signedIn();
+        allow create: if signedIn() &amp;&amp; request.resource.data.uid == me()
+          &amp;&amp; validText(request.resource.data.text)
+          &amp;&amp; request.resource.data.pinned == false;
+        allow update: if signedIn() &amp;&amp; (
+          (resource.data.uid == me() &amp;&amp; onlyChanges(['text', 'editedAt'])
+            &amp;&amp; validText(request.resource.data.text))
+          || (carOwner(carId) &amp;&amp; onlyChanges(['pinned']))
+        );
+        allow delete: if signedIn() &amp;&amp; (resource.data.uid == me() || carOwner(carId));
+
+        match /replies/{replyId} {
+          allow read: if signedIn();
+          allow create: if signedIn() &amp;&amp; request.resource.data.uid == me()
+            &amp;&amp; validText(request.resource.data.text);
+          allow update: if signedIn() &amp;&amp; resource.data.uid == me()
+            &amp;&amp; onlyChanges(['text', 'editedAt']) &amp;&amp; validText(request.resource.data.text);
+          allow delete: if signedIn() &amp;&amp; (resource.data.uid == me() || carOwner(carId));
+        }
+      }
+    }
+
+    // "Which cars did I like" — CarsProvider runs collectionGroup('likedBy').where('uid', ==, me).
+    match /{path=**}/likedBy/{uid} {
+      allow read: if signedIn();
+    }
+
+    // ------------------------------------------------------------ subscriptions
+    // Document id = '{followerUid}_{targetUid}'.
+    match /subscriptions/{id} {
+      allow read: if signedIn();
+      allow create: if signedIn()
+        &amp;&amp; request.resource.data.followerUid == me()
+        &amp;&amp; request.resource.data.targetUid != me()
+        &amp;&amp; id == me() + '_' + request.resource.data.targetUid;
+      allow delete: if signedIn() &amp;&amp; resource.data.followerUid == me();
+    }
+
+    // ------------------------------------------------------------ autosalons
+    // Document id = owner uid.
+    match /autosalons/{uid} {
+      allow read: if signedIn();
+      allow create: if signedIn() &amp;&amp; me() == uid &amp;&amp; granted('autoslon');
+      allow update: if signedIn() &amp;&amp; me() == uid &amp;&amp; !changesAny(['ownerId']);
+
+      match /locations/{id} {
+        allow read: if signedIn();
+        allow write: if signedIn() &amp;&amp; me() == uid;
+      }
+    }
+
+    // ------------------------------------------------------------ publish permissions
+    // publish_permissions/{uid}: the user may ask (…Requested = true) and use up
+    // a permission (…Granted = false). Only an admin may set …Granted = true.
+    match /publish_permissions/{uid} {
+      allow read: if signedIn() &amp;&amp; me() == uid;
+      allow create: if signedIn() &amp;&amp; me() == uid
+        &amp;&amp; request.resource.data.get('autoslonGranted', false) == false
+        &amp;&amp; request.resource.data.get('carsellGranted', false) == false;
+      allow update: if signedIn() &amp;&amp; me() == uid
+        &amp;&amp; (!changesAny(['autoslonGranted']) || request.resource.data.autoslonGranted == false)
+        &amp;&amp; (!changesAny(['carsellGranted']) || request.resource.data.carsellGranted == false);
+    }
+  }
+}</pre></div>
+        </details>
+        <details class="file">
+          <summary>backend/storage.rules <span>full file</span></summary>
+          <div class="code"><button class="copy" type="button">Copy</button><pre>rules_version = '2';
+
+// Firebase Storage rules for the new_app (project gravitas-auto).
+// Everyone signed in can view media; only the owner can upload/delete
+// inside their own folder. See backend/README.md, section 4.
+
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    function signedIn() { return request.auth != null; }
+    function mb(n) { return n * 1024 * 1024; }
+    // Deletes have no request.resource.
+    function sizeOk(limitMb) {
+      return request.resource == null || request.resource.size &lt; mb(limitMb);
+    }
+
+    // avatars/{uid}.{ext}
+    match /avatars/{file} {
+      allow read: if signedIn();
+      allow write: if signedIn()
+        &amp;&amp; file.matches(request.auth.uid + '[.][A-Za-z0-9]+')
+        &amp;&amp; sizeOk(10);
+    }
+
+    // cars/{ownerUid}/{carId}/photo_N.jpg and video.mp4
+    match /cars/{uid}/{carId}/{file} {
+      allow read: if signedIn();
+      allow write: if signedIn() &amp;&amp; request.auth.uid == uid
+        &amp;&amp; (file.matches('video.*') ? sizeOk(300) : sizeOk(15));
+    }
+
+    // autosalons/{uid}/logo_*, gallery/*, locations/*/*
+    match /autosalons/{uid}/{allPaths=**} {
+      allow read: if signedIn();
+      allow write: if signedIn() &amp;&amp; request.auth.uid == uid &amp;&amp; sizeOk(300);
+    }
+  }
+}</pre></div>
+        </details>
+        <details class="file">
+          <summary>backend/firestore.indexes.json <span>full file</span></summary>
+          <div class="code"><button class="copy" type="button">Copy</button><pre>{
+  "indexes": [
+    {
+      "collectionGroup": "cars",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "ownerId", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "cars",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "autosalonId", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    }
+  ],
+  "fieldOverrides": [
+    {
+      "collectionGroup": "likedBy",
+      "fieldPath": "uid",
+      "indexes": [
+        { "order": "ASCENDING", "queryScope": "COLLECTION" },
+        { "order": "ASCENDING", "queryScope": "COLLECTION_GROUP" }
+      ]
+    }
+  ]
+}</pre></div>
+        </details>
+        <p class="small muted">The indexes cover <code>cars</code> by <code>ownerId</code> + <code>createdAt</code> (public profile), by <code>autosalonId</code> + <code>createdAt</code> (dealer page), and the <code>likedBy.uid</code> collection-group query.</p>
+      </section>
+
+      <section id="functions">
+        <h2><span class="n">08</span>Cloud Functions</h2>
+        <p>Create them with <code>firebase init functions</code>: TypeScript, Node 20, a region near the users such as <code>europe-west1</code>. Functions need the Blaze (pay-as-you-go) plan.</p>
+        <div class="tw"><table>
+          <thead><tr><th>Trigger</th><th>What it does</th></tr></thead>
+          <tbody>
+            <tr><td><code>cars/{carId}/likedBy/{uid}</code> create / delete</td><td><code>likesCount ±1</code>; on create, notify the owner (<code>like</code>)</td></tr>
+            <tr><td><code>cars/{carId}/savedBy/{uid}</code> create / delete</td><td><code>savesCount ±1</code></td></tr>
+            <tr><td><code>cars/{carId}/viewLog/{id}</code> create</td><td><code>viewsCount +1</code>, skipped for the owner</td></tr>
+            <tr><td><code>subscriptions/{id}</code> create / delete</td><td><code>subscribersCount ±1</code>; notify on create (<code>subscribe</code>)</td></tr>
+            <tr><td><code>cars/{carId}/comments/{id}</code> create</td><td>Notify the car owner (<code>comment</code>)</td></tr>
+            <tr><td><code>…/comments/{cid}/replies/{id}</code> create</td><td>Notify the parent comment's author (<code>reply</code>)</td></tr>
+            <tr><td><code>cars/{carId}</code> create</td><td>Consume <code>carsellGranted</code>; fill <code>priceNum</code>, <code>yearNum</code>, <code>kmNum</code></td></tr>
+            <tr><td><code>cars/{carId}</code> delete</td><td>Delete Storage folder, sub-collections, favorites / savedCars entries</td></tr>
+            <tr><td><code>users/{uid}/notifications/{id}</code> create</td><td>Send an FCM push (chapter 09)</td></tr>
+            <tr><td>Callable <code>grantPublish({uid, type})</code></td><td>Admin only: set <code>…Granted = true</code></td></tr>
+          </tbody>
+        </table></div>
+        <h3>Example: likes</h3>
+        <div class="code"><span class="lang">typescript · functions/src/index.ts</span><button class="copy" type="button">Copy</button><pre class="labelled">import { onDocumentCreated, onDocumentDeleted } from 'firebase-functions/v2/firestore';
+import { onCall, HttpsError } from 'firebase-functions/v2/https';
+import { setGlobalOptions } from 'firebase-functions/v2';
+import { initializeApp } from 'firebase-admin/app';
+import { getFirestore, FieldValue } from 'firebase-admin/firestore';
+
+setGlobalOptions({ region: 'europe-west1' });
+initializeApp();
+const db = getFirestore();
+
+export const onLike = onDocumentCreated('cars/{carId}/likedBy/{uid}', async (e) =&gt; {
+  const { carId, uid } = e.params;
+  const carRef = db.doc(`cars/${carId}`);
+  const car = (await carRef.get()).data();
+  if (!car) return;
+  await carRef.update({ likesCount: FieldValue.increment(1) });
+  if (car.ownerId &amp;&amp; car.ownerId !== uid) {
+    const from = (await db.doc(`users/${uid}`).get()).data() ?? {};
+    await db.collection(`users/${car.ownerId}/notifications`).add({
+      type: 'like', fromUid: uid, fromName: from.name ?? 'Пользователь',
+      fromAvatarUrl: from.avatarUrl ?? null, carId, carName: car.name ?? null,
+      commentId: null, text: null, read: false, createdAt: FieldValue.serverTimestamp(),
+    });
+  }
+});
+
+export const onUnlike = onDocumentDeleted('cars/{carId}/likedBy/{uid}', async (e) =&gt; {
+  await db.doc(`cars/${e.params.carId}`)
+    .update({ likesCount: FieldValue.increment(-1) })
+    .catch(() =&gt; {});            // the car itself may already be deleted
+});</pre></div>
+        <h3>Example: admin approval</h3>
+        <div class="code"><span class="lang">typescript</span><button class="copy" type="button">Copy</button><pre class="labelled">export const grantPublish = onCall(async (req) =&gt; {
+  if (req.auth?.token.admin !== true) throw new HttpsError('permission-denied', 'Admins only');
+  const { uid, type } = req.data as { uid: string; type: 'carsell' | 'autoslon' };
+  if (!uid || !['carsell', 'autoslon'].includes(type)) throw new HttpsError('invalid-argument', 'uid and type are required');
+  await db.doc(`publish_permissions/${uid}`).set(
+    { [`${type}Granted`]: true, updatedAt: FieldValue.serverTimestamp() },
+    { merge: true },
+  );
+  return { ok: true };
+});
+
+export const consumeCarPermission = onDocumentCreated('cars/{carId}', async (e) =&gt; {
+  const car = e.data?.data();
+  if (!car || car.isAutosalonCar) return;
+  await db.doc(`publish_permissions/${car.ownerId}`).set(
+    { carsellGranted: false, carsellRequested: false, updatedAt: FieldValue.serverTimestamp() },
+    { merge: true },
+  );
+});</pre></div>
+        <div class="note"><p><strong>Switch over in one release.</strong> When a function takes over a counter or a notification, the app must stop doing the same thing in that release, or counts double and notifications arrive twice. The client code to remove is in <code>cars_provider.dart</code>, <code>saved_cars_provider.dart</code>, <code>subscribtion_provider.dart</code> and <code>notification_sender.dart</code>.</p></div>
+      </section>
+
+      <section id="push">
+        <h2><span class="n">09</span>Push notifications</h2>
+        <ol class="steps">
+          <li><strong>App (Flutter team):</strong> add <code>firebase_messaging</code>, ask for permission, and save the device token to <code>users/{uid}/fcmTokens/{token}</code> with <code>platform</code> and <code>updatedAt</code>. Refresh it on <code>onTokenRefresh</code>; delete it on sign-out.</li>
+          <li><strong>iOS:</strong> upload an APNs key in Firebase console → Project settings → Cloud Messaging.</li>
+          <li><strong>Backend:</strong> on <code>users/{uid}/notifications/{id}</code> create, send to every token and delete tokens FCM reports as invalid.</li>
+        </ol>
+        <div class="code"><span class="lang">typescript</span><button class="copy" type="button">Copy</button><pre class="labelled">import { getMessaging } from 'firebase-admin/messaging';
+
+const TITLES: Record&lt;string, string&gt; = {
+  like: 'Новый лайк', comment: 'Новый комментарий', reply: 'Вам ответили', subscribe: 'Новый подписчик',
+};
+
+export const pushNotification = onDocumentCreated('users/{uid}/notifications/{id}', async (e) =&gt; {
+  const n = e.data?.data();
+  if (!n) return;
+  const tokens = await db.collection(`users/${e.params.uid}/fcmTokens`).get();
+  if (tokens.empty) return;
+  const res = await getMessaging().sendEachForMulticast({
+    tokens: tokens.docs.map((d) =&gt; d.id),
+    notification: { title: TITLES[n.type] ?? 'Gravitas Auto', body: `${n.fromName}${n.carName ? ' · ' + n.carName : ''}` },
+    data: { type: String(n.type), carId: String(n.carId ?? '') },
+  });
+  await Promise.all(res.responses.map((r, i) =&gt;
+    r.success ? null : tokens.docs[i].ref.delete()));
+});</pre></div>
+      </section>
+
+      <section id="scale">
+        <h2><span class="n">10</span>Search &amp; scale</h2>
+        <p>Today the app downloads all cars and filters them on the phone (<code>pages/search/search_page.dart</code>). Plan this before the catalogue grows past a few thousand cars:</p>
+        <ol class="steps">
+          <li><strong>Numbers as numbers.</strong> A function on car write parses <code>price</code>, <code>year</code>, <code>km</code> into <code>priceNum</code>, <code>yearNum</code>, <code>kmNum</code> (strip spaces and «км», «$»). Backfill existing cars once.</li>
+          <li><strong>Pagination.</strong> Home and feed load 20 cars at a time with <code>orderBy('createdAt', 'desc').limit(20).startAfter(last)</code>.</li>
+          <li><strong>Filters on the server.</strong> Brand, body type, fuel and price range as Firestore queries with matching composite indexes, or</li>
+          <li><strong>A search service</strong> such as Typesense or Algolia, kept in sync by a function, for free-text search in Russian and Uzbek.</li>
+        </ol>
+      </section>
+
+      <section id="checklist">
+        <h2><span class="n">11</span>Release checklist</h2>
+        <p>Run this with two test accounts, A and B, after every rules or functions change. Your ticks are saved in this browser only.</p>
+        <div class="progress"><span id="count">0 / 0 done</span><div class="bar" aria-hidden="true"><i id="fill"></i></div><button type="button" class="reset" id="reset">Clear ticks</button></div>
+        <ul class="check" id="check">
+          <li><input type="checkbox" id="c1"><label for="c1">Sign-up creates <code>users/{uid}</code>; sign-in and sign-out work</label></li>
+          <li><input type="checkbox" id="c2"><label for="c2">Home list, video feed and car detail open; photos and videos load</label></li>
+          <li><input type="checkbox" id="c3"><label for="c3">A likes B's car: count goes up and B gets a notification; unlike works</label></li>
+          <li><input type="checkbox" id="c4"><label for="c4">Save, favourite and remove work, and survive an app restart</label></li>
+          <li><input type="checkbox" id="c5"><label for="c5">A comments and replies, edits own comment; B (car owner) pins and deletes A's comment</label></li>
+          <li><input type="checkbox" id="c6"><label for="c6">A follows B: B's subscriber count and notification; unfollow works</label></li>
+          <li><input type="checkbox" id="c7"><label for="c7">Profile edit and avatar upload; a history entry appears</label></li>
+          <li><input type="checkbox" id="c8"><label for="c8">Sell a car: request, admin grants, form opens, publish, permission is used up</label></li>
+          <li><input type="checkbox" id="c9"><label for="c9">Autosalon: request, grant, publish with locations and cars; dashboard edits work</label></li>
+          <li><input type="checkbox" id="c10"><label for="c10">Owner deletes a car: it disappears for everyone, files are cleaned up</label></li>
+          <li><input type="checkbox" id="c11"><label for="c11">A <strong>cannot</strong> grant themselves, edit B's car or profile, or read B's notifications</label></li>
+        </ul>
+      </section>
+
+      <footer>
+        Written from the Flutter code on branch <code>dev</code>, October 2026. Ask the Flutter team before changing any field name, type or path on this page. Source: <code>backend/README.md</code> in the repo.
+      </footer>
+    </div>
+  </main>
+</div>
+
+<script>
+(function () {
+  // copy buttons
+  document.querySelectorAll('.copy').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var pre = btn.parentElement.querySelector('pre');
+      var text = pre.innerText;
+      var done = function () { btn.textContent = 'Copied'; setTimeout(function () { btn.textContent = 'Copy'; }, 1500); };
+      var fallback = function () {
+        var r = document.createRange(); r.selectNodeContents(pre);
+        var s = window.getSelection(); s.removeAllRanges(); s.addRange(r);
+        btn.textContent = 'Selected, press Ctrl+C';
+        setTimeout(function () { btn.textContent = 'Copy'; }, 2500);
+      };
+      try { navigator.clipboard.writeText(text).then(done, fallback); } catch (e) { fallback(); }
+    });
+  });
+
+  // priority filter
+  var fbtns = document.querySelectorAll('.filters button');
+  fbtns.forEach(function (b) {
+    b.addEventListener('click', function () {
+      var f = b.dataset.f;
+      fbtns.forEach(function (x) { x.setAttribute('aria-pressed', String(x === b)); });
+      document.querySelectorAll('#issues .issue').forEach(function (it) { it.hidden = !(f === 'all' || it.dataset.p === f); });
+    });
+  });
+
+  // checklist with per-browser memory
+  var KEY = 'gravitas-backend-checklist';
+  var boxes = Array.prototype.slice.call(document.querySelectorAll('#check input'));
+  var saved = {};
+  try { saved = JSON.parse(localStorage.getItem(KEY) || '{}') || {}; } catch (e) { saved = {}; }
+  function render() {
+    var n = 0;
+    boxes.forEach(function (b) { b.parentElement.classList.toggle('done', b.checked); if (b.checked) n++; });
+    document.getElementById('count').textContent = n + ' / ' + boxes.length + ' done';
+    document.getElementById('fill').style.width = (100 * n / boxes.length) + '%';
+  }
+  function store() {
+    var s = {}; boxes.forEach(function (b) { s[b.id] = b.checked; });
+    try { localStorage.setItem(KEY, JSON.stringify(s)); } catch (e) {}
+  }
+  boxes.forEach(function (b) { b.checked = !!saved[b.id]; b.addEventListener('change', function () { render(); store(); }); });
+  document.getElementById('reset').addEventListener('click', function () { boxes.forEach(function (b) { b.checked = false; }); render(); store(); });
+  render();
+
+  // highlight the chapter in view
+  var links = {};
+  document.querySelectorAll('#toc a').forEach(function (a) { links[a.getAttribute('href').slice(1)] = a; });
+  if ('IntersectionObserver' in window) {
+    var io = new IntersectionObserver(function (entries) {
+      entries.forEach(function (en) {
+        if (en.isIntersecting) {
+          Object.keys(links).forEach(function (k) { links[k].classList.toggle('on', k === en.target.id); });
+        }
+      });
+    }, { rootMargin: '-20% 0px -70% 0px' });
+    document.querySelectorAll('main section').forEach(function (s) { io.observe(s); });
+  }
+})();
+</script>

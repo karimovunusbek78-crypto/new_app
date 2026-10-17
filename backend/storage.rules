@@ -1,0 +1,38 @@
+rules_version = '2';
+
+// Firebase Storage rules for the new_app (project gravitas-auto).
+// Everyone signed in can view media; only the owner can upload/delete
+// inside their own folder. See backend/README.md, section 4.
+
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    function signedIn() { return request.auth != null; }
+    function mb(n) { return n * 1024 * 1024; }
+    // Deletes have no request.resource.
+    function sizeOk(limitMb) {
+      return request.resource == null || request.resource.size < mb(limitMb);
+    }
+
+    // avatars/{uid}.{ext}
+    match /avatars/{file} {
+      allow read: if signedIn();
+      allow write: if signedIn()
+        && file.matches(request.auth.uid + '[.][A-Za-z0-9]+')
+        && sizeOk(10);
+    }
+
+    // cars/{ownerUid}/{carId}/photo_N.jpg and video.mp4
+    match /cars/{uid}/{carId}/{file} {
+      allow read: if signedIn();
+      allow write: if signedIn() && request.auth.uid == uid
+        && (file.matches('video.*') ? sizeOk(300) : sizeOk(15));
+    }
+
+    // autosalons/{uid}/logo_*, gallery/*, locations/*/*
+    match /autosalons/{uid}/{allPaths=**} {
+      allow read: if signedIn();
+      allow write: if signedIn() && request.auth.uid == uid && sizeOk(300);
+    }
+  }
+}

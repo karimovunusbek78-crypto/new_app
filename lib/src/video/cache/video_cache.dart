@@ -39,6 +39,8 @@ class VideoCache {
   /// уже лежало на диске.
   static void prefetch(String? path) {
     if (path == null || !path.startsWith('http')) return;
-    _manager.getSingleFile(path).catchError((_) => File(''));
+    // Errors are ignored: returning dart:io File('') from catchError was a
+    // TypeError (the cache manager uses package:file's File).
+    _manager.getSingleFile(path).then<void>((_) {}, onError: (_) {});
   }
 }
