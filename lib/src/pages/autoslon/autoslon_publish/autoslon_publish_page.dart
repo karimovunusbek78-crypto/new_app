@@ -513,10 +513,6 @@ class _AutoslonPublishPageState extends State<AutoslonPublishPage>
         'updatedAt': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
 
-      try {
-        await PublishPermissions.consume(PublishType.autoslon);
-      } catch (_) {}
-
       if (!mounted) return;
       Navigator.pop(context);
       setState(() => _publishing = false);

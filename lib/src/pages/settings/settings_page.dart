@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:responsive_sizer/responsive_sizer.dart';
 
 class SettingsPage extends StatelessWidget {
@@ -65,17 +64,16 @@ class _SettingsTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      margin: EdgeInsets.only(bottom: 1.2.h),
-      decoration: BoxDecoration(
-        color: Colors.white,
+    return Padding(
+      padding: EdgeInsets.only(bottom: 1.2.h),
+      child: Material(
+      color: Colors.white,
+      shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(3.5.w),
       ),
+      clipBehavior: Clip.antiAlias,
       child: ListTile(
         onTap: onTap,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(3.5.w),
-        ),
         leading: Icon(icon, color: Colors.black, size: 2.4.h),
         title: Text(
           label,
@@ -88,6 +86,7 @@ class _SettingsTile extends StatelessWidget {
         trailing: Icon(Icons.chevron_right_rounded,
             color: const Color(0xFFB0B0B0), size: 2.4.h),
       ),
+    ),
     );
   }
 }

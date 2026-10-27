@@ -531,11 +531,7 @@ class _CarDetailPageState extends State<CarDetailPage> {
     );
   }
 
-  String _priceText(Car car) {
-    final p = car.price.trim();
-    if (p.isEmpty) return 'Цена не указана';
-    return p.contains('\$') ? p : '\$$p';
-  }
+  String _priceText(Car car) => formatPrice(car.price);
 
   // ------------------------------------------------------------- video card
 

@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:responsive_sizer/responsive_sizer.dart';
+import 'package:new_app/src/app/app_theme.dart';
+import 'package:new_app/src/app/ui_kit.dart';
 import 'package:new_app/src/authentifications/sign_up/sign_up.dart';
 
 class SignIn extends StatefulWidget {
@@ -28,8 +30,12 @@ class _SignInState extends State<SignIn> {
   }
 
   Future<void> _signIn() async {
+    FocusScope.of(context).unfocus();
     if (!_formKey.currentState!.validate()) return;
-    setState(() { _isLoading = true; _errorMessage = null; });
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
     try {
       await FirebaseAuth.instance.signInWithEmailAndPassword(
         email: _emailController.text.trim(),
@@ -42,7 +48,9 @@ class _SignInState extends State<SignIn> {
         Navigator.of(context).popUntil((route) => route.isFirst);
       }
     } on FirebaseAuthException catch (e) {
-      debugPrint('FirebaseAuthException code: ${e.code}, message: ${e.message}');
+      debugPrint(
+        'FirebaseAuthException code: ${e.code}, message: ${e.message}',
+      );
       setState(() {
         switch (e.code) {
           case 'user-not-found':
@@ -81,91 +89,119 @@ class _SignInState extends State<SignIn> {
     }
   }
 
+  Future<void> _resetPassword() async {
+    final email = _emailController.text.trim();
+    if (!RegExp(r'^[\w-.]+@([\w-]+\.)+[\w-]{2,}$').hasMatch(email)) {
+      setState(
+        () => _errorMessage = 'Введите email, чтобы восстановить пароль',
+      );
+      return;
+    }
+    try {
+      await FirebaseAuth.instance.sendPasswordResetEmail(email: email);
+      if (!mounted) return;
+      setState(() => _errorMessage = null);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Письмо для сброса пароля отправлено на $email'),
+        ),
+      );
+    } on FirebaseAuthException catch (e) {
+      setState(() => _errorMessage = 'Не удалось отправить письмо: ${e.code}');
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.white,
-      body: SafeArea(
-        child: SingleChildScrollView(
-          padding: EdgeInsets.symmetric(horizontal: 6.w),
-          child: Form(
-            key: _formKey,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                SizedBox(height: 6.h),
-                Text('Добро пожаловать', style: TextStyle(fontSize: 24.sp, fontWeight: FontWeight.w800, color: const Color(0xFF1C1C1E), letterSpacing: -0.5)),
-                SizedBox(height: 0.8.h),
-                Text('Войдите, чтобы продолжить', style: TextStyle(fontSize: 13.sp, color: const Color(0xFF9E9E9E))),
-                SizedBox(height: 4.h),
-                if (_errorMessage != null) ...[
-                  Container(
-                    width: double.infinity,
-                    padding: EdgeInsets.symmetric(horizontal: 4.w, vertical: 1.5.h),
-                    decoration: BoxDecoration(color: const Color(0xFFFFEEEE), borderRadius: BorderRadius.circular(12)),
-                    child: Text(_errorMessage!, style: TextStyle(fontSize: 12.sp, color: const Color(0xFFD32F2F))),
-                  ),
-                  SizedBox(height: 2.h),
-                ],
-                AuthLabel(text: 'Email'),
-                SizedBox(height: 1.h),
-                AuthInputField(
-                  controller: _emailController,
-                  hint: 'Введите ваш email',
-                  prefixIcon: Icons.mail_outline_rounded,
-                  keyboardType: TextInputType.emailAddress,
-                  validator: (v) {
-                    if (v == null || v.isEmpty) return 'Введите email';
-                    if (!RegExp(r'^[\w-.]+@([\w-]+\.)+[\w-]{2,}$').hasMatch(v)) return 'Неверный формат email';
-                    return null;
-                  },
-                ),
-                SizedBox(height: 2.5.h),
-                AuthLabel(text: 'Пароль'),
-                SizedBox(height: 1.h),
-                AuthInputField(
-                  controller: _passwordController,
-                  hint: 'Введите ваш пароль',
-                  prefixIcon: Icons.lock_outline_rounded,
-                  obscureText: _obscurePassword,
-                  suffixIcon: GestureDetector(
-                    onTap: () => setState(() => _obscurePassword = !_obscurePassword),
-                    child: Icon(_obscurePassword ? Icons.visibility_off_outlined : Icons.visibility_outlined, color: const Color(0xFF9E9E9E), size: 20),
-                  ),
-                  validator: (v) {
-                    if (v == null || v.isEmpty) return 'Введите пароль';
-                    if (v.length < 6) return 'Минимум 6 символов';
-                    return null;
-                  },
-                ),
-                SizedBox(height: 4.h),
-                SizedBox(
-                  width: double.infinity, height: 7.h,
-                  child: ElevatedButton(
-                    onPressed: _isLoading ? null : _signIn,
-                    style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF1C1C1E), foregroundColor: Colors.white, elevation: 0, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16))),
-                    child: _isLoading
-                        ? const SizedBox(width: 22, height: 22, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                        : Text('Войти', style: TextStyle(fontSize: 15.sp, fontWeight: FontWeight.w600)),
-                  ),
-                ),
-                SizedBox(height: 3.h),
-                Center(
-                  child: GestureDetector(
-                    onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const SignUp())),
-                    child: RichText(
-                      text: TextSpan(
-                        text: 'Нет аккаунта? ',
-                        style: TextStyle(fontSize: 13.sp, color: const Color(0xFF9E9E9E)),
-                        children: [TextSpan(text: 'Зарегистрироваться', style: TextStyle(fontSize: 13.sp, fontWeight: FontWeight.w700, color: const Color(0xFF2D1B6E)))],
-                      ),
-                    ),
-                  ),
-                ),
-                SizedBox(height: 3.h),
-              ],
+    return AuthScaffold(
+      title: 'С возвращением 👋',
+      subtitle: 'Войдите, чтобы продолжить',
+      child: Form(
+        key: _formKey,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            AuthErrorBanner(message: _errorMessage),
+            FadeSlideIn(
+              delay: const Duration(milliseconds: 100),
+              child: AuthInputField(
+                controller: _emailController,
+                label: 'Email',
+                hint: 'name@mail.com',
+                prefixIcon: Icons.mail_outline_rounded,
+                keyboardType: TextInputType.emailAddress,
+                textInputAction: TextInputAction.next,
+                validator: (v) {
+                  if (v == null || v.isEmpty) return 'Введите email';
+                  if (!RegExp(
+                    r'^[\w-.]+@([\w-]+\.)+[\w-]{2,}$',
+                  ).hasMatch(v.trim()))
+                    return 'Неверный формат email';
+                  return null;
+                },
+              ),
             ),
-          ),
+            const SizedBox(height: 16),
+            FadeSlideIn(
+              delay: const Duration(milliseconds: 170),
+              child: AuthInputField(
+                controller: _passwordController,
+                label: 'Пароль',
+                hint: 'Ваш пароль',
+                prefixIcon: Icons.lock_outline_rounded,
+                obscureText: _obscurePassword,
+                textInputAction: TextInputAction.done,
+                onSubmitted: (_) => _signIn(),
+                suffixIcon: IconButton(
+                  onPressed: () =>
+                      setState(() => _obscurePassword = !_obscurePassword),
+                  icon: Icon(
+                    _obscurePassword
+                        ? Icons.visibility_off_outlined
+                        : Icons.visibility_outlined,
+                    color: AppColors.muted,
+                    size: 20,
+                  ),
+                ),
+                validator: (v) {
+                  if (v == null || v.isEmpty) return 'Введите пароль';
+                  if (v.length < 6) return 'Минимум 6 символов';
+                  return null;
+                },
+              ),
+            ),
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton(
+                onPressed: _resetPassword,
+                child: const Text(
+                  'Забыли пароль?',
+                  style: TextStyle(fontWeight: FontWeight.w600),
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            FadeSlideIn(
+              delay: const Duration(milliseconds: 240),
+              child: GradientButton(
+                label: 'Войти',
+                icon: Icons.arrow_forward_rounded,
+                loading: _isLoading,
+                onPressed: _signIn,
+              ),
+            ),
+            const SizedBox(height: 24),
+            Center(
+              child: AuthSwitchLink(
+                text: 'Нет аккаунта? ',
+                action: 'Зарегистрироваться',
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const SignUp()),
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -174,58 +210,342 @@ class _SignInState extends State<SignIn> {
 
 // ── Shared widgets ─────────────────────────────────────────────────────────
 
+/// Общий каркас экранов входа/регистрации: градиентная "шапка" с логотипом
+/// и белый лист с формой, который выезжает снизу.
+class AuthScaffold extends StatelessWidget {
+  final String title;
+  final String subtitle;
+  final Widget child;
+  final bool showBack;
+
+  const AuthScaffold({
+    super.key,
+    required this.title,
+    required this.subtitle,
+    required this.child,
+    this.showBack = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final topPad = MediaQuery.of(context).padding.top;
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: SystemUiOverlayStyle.light,
+      child: Scaffold(
+        backgroundColor: AppColors.primaryDeep,
+        body: GestureDetector(
+          onTap: () => FocusScope.of(context).unfocus(),
+          child: Container(
+            decoration: const BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  Color(0xFF2D1B6E),
+                  Color(0xFF4B3BD6),
+                  Color(0xFF3A6FF8),
+                ],
+              ),
+            ),
+            child: Stack(
+              children: [
+                // Декоративные "пятна" света
+                Positioned(top: -60, right: -40, child: _glowCircle(200, 0.12)),
+                Positioned(top: 120, left: -70, child: _glowCircle(160, 0.08)),
+                // Белый "пол", чтобы под листом с формой не просвечивал градиент
+                // при коротком контенте или overscroll'е.
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  height: MediaQuery.of(context).size.height * 0.4,
+                  child: const ColoredBox(color: Colors.white),
+                ),
+                SingleChildScrollView(
+                  keyboardDismissBehavior:
+                      ScrollViewKeyboardDismissBehavior.onDrag,
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(
+                      minHeight: MediaQuery.of(context).size.height,
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        SizedBox(height: topPad + 12),
+                        if (showBack)
+                          Padding(
+                            padding: const EdgeInsets.only(left: 16),
+                            child: Pressable(
+                              onTap: () => Navigator.pop(context),
+                              child: Container(
+                                width: 44,
+                                height: 44,
+                                decoration: BoxDecoration(
+                                  color: Colors.white.withValues(alpha: 0.15),
+                                  borderRadius: BorderRadius.circular(14),
+                                ),
+                                child: const Icon(
+                                  Icons.arrow_back_ios_new_rounded,
+                                  color: Colors.white,
+                                  size: 18,
+                                ),
+                              ),
+                            ),
+                          )
+                        else
+                          const SizedBox(height: 44),
+                        const SizedBox(height: 20),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 24),
+                          child: FadeSlideIn(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const AppLogo(size: 72),
+                                const SizedBox(height: 20),
+                                Text(
+                                  title,
+                                  style: const TextStyle(
+                                    fontSize: 30,
+                                    fontWeight: FontWeight.w800,
+                                    color: Colors.white,
+                                    letterSpacing: -0.8,
+                                    height: 1.1,
+                                  ),
+                                ),
+                                const SizedBox(height: 8),
+                                Text(
+                                  subtitle,
+                                  style: TextStyle(
+                                    fontSize: 15,
+                                    color: Colors.white.withValues(alpha: 0.75),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 32),
+                        FadeSlideIn(
+                          delay: const Duration(milliseconds: 60),
+                          offset: const Offset(0, 60),
+                          duration: const Duration(milliseconds: 650),
+                          child: Container(
+                            width: double.infinity,
+                            constraints: BoxConstraints(
+                              minHeight:
+                                  MediaQuery.of(context).size.height * 0.62,
+                            ),
+                            padding: EdgeInsets.fromLTRB(
+                              24,
+                              28,
+                              24,
+                              24 + MediaQuery.of(context).padding.bottom,
+                            ),
+                            decoration: const BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.vertical(
+                                top: Radius.circular(32),
+                              ),
+                            ),
+                            child: child,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _glowCircle(double size, double opacity) => Container(
+    width: size,
+    height: size,
+    decoration: BoxDecoration(
+      shape: BoxShape.circle,
+      color: Colors.white.withValues(alpha: opacity),
+    ),
+  );
+}
+
+/// Плашка ошибки, которая плавно раскрывается/скрывается.
+class AuthErrorBanner extends StatelessWidget {
+  final String? message;
+  const AuthErrorBanner({super.key, required this.message});
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedSize(
+      duration: const Duration(milliseconds: 280),
+      curve: Curves.easeOutCubic,
+      child: AnimatedSwitcher(
+        duration: const Duration(milliseconds: 220),
+        child: message == null
+            ? const SizedBox(width: double.infinity)
+            : Container(
+                key: ValueKey(message),
+                width: double.infinity,
+                margin: const EdgeInsets.only(bottom: 18),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 12,
+                ),
+                decoration: BoxDecoration(
+                  color: AppColors.danger.withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(
+                    color: AppColors.danger.withValues(alpha: 0.2),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(
+                      Icons.error_outline_rounded,
+                      color: AppColors.danger,
+                      size: 20,
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        message!,
+                        style: const TextStyle(
+                          fontSize: 13.5,
+                          color: AppColors.danger,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+      ),
+    );
+  }
+}
+
+class AuthSwitchLink extends StatelessWidget {
+  final String text;
+  final String action;
+  final VoidCallback onTap;
+
+  const AuthSwitchLink({
+    super.key,
+    required this.text,
+    required this.action,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Pressable(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.all(8),
+        child: RichText(
+          text: TextSpan(
+            text: text,
+            style: const TextStyle(fontSize: 14, color: AppColors.muted),
+            children: [
+              TextSpan(
+                text: action,
+                style: const TextStyle(
+                  fontWeight: FontWeight.w800,
+                  color: AppColors.primary,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class AuthLabel extends StatelessWidget {
   final String text;
   const AuthLabel({Key? key, required this.text}) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
-    return Text(text, style: TextStyle(fontSize: 13.sp, fontWeight: FontWeight.w600, color: const Color(0xFF1C1C1E)));
+    return Text(
+      text,
+      style: const TextStyle(
+        fontSize: 13.5,
+        fontWeight: FontWeight.w700,
+        color: AppColors.ink,
+      ),
+    );
   }
 }
 
 class AuthInputField extends StatelessWidget {
   final TextEditingController controller;
+  final String? label;
   final String hint;
   final IconData prefixIcon;
   final bool obscureText;
   final Widget? suffixIcon;
   final TextInputType? keyboardType;
+  final TextInputAction? textInputAction;
+  final ValueChanged<String>? onSubmitted;
   final String? Function(String?)? validator;
 
   const AuthInputField({
     Key? key,
     required this.controller,
+    this.label,
     required this.hint,
     required this.prefixIcon,
     this.obscureText = false,
     this.suffixIcon,
     this.keyboardType,
+    this.textInputAction,
+    this.onSubmitted,
     this.validator,
   }) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
-    return TextFormField(
+    final field = TextFormField(
       controller: controller,
       obscureText: obscureText,
       keyboardType: keyboardType,
+      textInputAction: textInputAction,
+      onFieldSubmitted: onSubmitted,
       validator: validator,
-      style: TextStyle(fontSize: 13.5.sp, color: const Color(0xFF1C1C1E)),
+      style: const TextStyle(
+        fontSize: 15.5,
+        fontWeight: FontWeight.w600,
+        color: AppColors.ink,
+      ),
       decoration: InputDecoration(
         hintText: hint,
-        hintStyle: TextStyle(fontSize: 13.sp, color: const Color(0xFFBBBBBB)),
-        prefixIcon: Icon(prefixIcon, color: const Color(0xFF9E9E9E), size: 20),
+        prefixIcon: Icon(prefixIcon, color: AppColors.muted, size: 20),
         suffixIcon: suffixIcon,
-        filled: true,
-        fillColor: const Color(0xFFF7F7F9),
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide.none),
-        enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: Color(0xFFEEEEEE), width: 1)),
-        focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: Color(0xFF2D1B6E), width: 1.5)),
-        errorBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: Color(0xFFD32F2F), width: 1)),
-        focusedErrorBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: Color(0xFFD32F2F), width: 1.5)),
+        fillColor: AppColors.surfaceAlt,
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(16),
+          borderSide: BorderSide.none,
+        ),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 16,
+          vertical: 18,
+        ),
       ),
+    );
+    if (label == null) return field;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        AuthLabel(text: label!),
+        const SizedBox(height: 8),
+        field,
+      ],
     );
   }
 }

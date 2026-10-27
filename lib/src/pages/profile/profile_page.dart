@@ -4,11 +4,11 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
+import 'package:new_app/src/app/app_theme.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:new_app/src/pages/pages.dart';
 import 'package:new_app/src/pages/profile/service/profile_history_service.dart';
 import 'package:new_app/src/pages/favorite/favorite_page.dart';
-import 'package:new_app/src/pages/saved/page/saved_car_card.dart';
 import 'package:new_app/src/pages/settings/settings_page.dart';
 import 'package:responsive_sizer/responsive_sizer.dart';
 class ProfilePage extends StatefulWidget {
@@ -979,18 +979,26 @@ class _MenuTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        color: const Color(0xFFF7F7F7),
-        borderRadius: BorderRadius.circular(3.5.w),
-        border: Border.all(color: const Color(0xFFEFEFEF), width: 1),
+    // Material (а не Container с цветом) — иначе ListTile рисует
+    // ripple "под" фоном и ловит assertion во Flutter.
+    return Material(
+      color: Colors.white,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(18),
+        side: const BorderSide(color: AppColors.hairline),
       ),
+      clipBehavior: Clip.antiAlias,
       child: ListTile(
         onTap: onTap,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(3.5.w),
+        leading: Container(
+          width: 38,
+          height: 38,
+          decoration: BoxDecoration(
+            color: AppColors.primary.withValues(alpha: 0.1),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Icon(icon, color: AppColors.primary, size: 20),
         ),
-        leading: Icon(icon, color: Colors.black, size: 2.4.h),
         title: Text(
           label,
           style: TextStyle(

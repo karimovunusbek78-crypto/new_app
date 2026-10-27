@@ -166,7 +166,6 @@ class CarSellPermissionNotifier extends _PublishPermissionNotifier {
 /// Shared confirmation dialog shown right before publishing.
 /// Returns `true` only if the user confirmed.
 Future<bool> showPublishConfirmDialog(BuildContext context) async {
-  const accentBlue = Color(0xFF5B4FD9);
   final result = await showDialog<bool>(
     context: context,
     builder: (ctx) => AlertDialog(
@@ -180,9 +179,7 @@ Future<bool> showPublishConfirmDialog(BuildContext context) async {
         ),
       ),
       content: const Text(
-        'Проверьте, что вы заполнили все поля и добавили фото.\n\n'
-        'После публикации разрешение будет использовано — для следующего '
-        'объявления его нужно будет получить заново.',
+        'Проверьте, что вы заполнили все поля и добавили фото.',
         style: TextStyle(color: Color(0xFF6A6A70), height: 1.4),
       ),
       actionsPadding: const EdgeInsets.fromLTRB(12, 0, 12, 12),

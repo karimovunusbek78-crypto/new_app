@@ -338,7 +338,6 @@ class _CarPublishPageState extends State<CarPublishPage>
     }
 
     // Capture providers before any await (avoids using context across gaps).
-    final notifier = context.read<CarSellPermissionNotifier>();
     final carsProvider = context.read<CarsProvider>();
 
     // The publish button does not publish immediately: confirm first.
@@ -434,9 +433,6 @@ class _CarPublishPageState extends State<CarPublishPage>
       );
       debugPrint('✔ Firestore doc written');
 
-      // Consume the one-time permission, then return the new car. After this
-      // the user must request permission again for the next listing.
-      await notifier.consume();
       if (!mounted) return;
 
       Navigator.pop(context, car);

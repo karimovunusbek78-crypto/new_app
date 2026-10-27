@@ -174,11 +174,13 @@ class CarsProvider extends ChangeNotifier {
     if (uid != null && uid == ownerId) return;
 
     final carRef = _firestore.collection('cars').doc(carId);
-    await carRef.update({'viewsCount': FieldValue.increment(1)}).catchError((_) {});
-    await carRef.collection('viewLog').add({
-      'viewedAt': FieldValue.serverTimestamp(),
-      'viewerUid': uid,
-    }).catchError((_) {});
+    try {
+      await carRef.update({'viewsCount': FieldValue.increment(1)});
+      await carRef.collection('viewLog').add({
+        'viewedAt': FieldValue.serverTimestamp(),
+        'viewerUid': uid,
+      });
+    } catch (_) {}
   }
 
   Future<int> viewsToday(String carId) async {

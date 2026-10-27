@@ -37,6 +37,19 @@ class NavTabController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Одноразовый запрос: при открытии таба "Поиск" сфокусировать поле
+  /// ввода. Раньше SearchPage запрашивала фокус в initState — но все табы
+  /// создаются сразу при старте, поэтому клавиатура выскакивала прямо
+  /// на Главной. Теперь фокус ставится только по явному запросу.
+  bool pendingSearchFocus = false;
+
+  void openSearch({bool focus = true}) {
+    _cameFromDetailCar = null;
+    pendingSearchFocus = focus;
+    _currentIndex = 1;
+    notifyListeners();
+  }
+
   /// Переключает на таб "Видео" и просит ленту сразу перейти
   /// на видео конкретного авто. Без стрелки назад — обычный переход.
   void openVideoFeed({String? carId}) {

@@ -3,7 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:new_app/src/video/controller/main_tab_controller.dart';
 import 'package:provider/provider.dart';
 import 'package:new_app/src/video/video%20page/video_page.dart';
-import 'package:responsive_sizer/responsive_sizer.dart';
+import 'package:new_app/src/app/app_theme.dart';
 import 'package:new_app/src/pages/pages.dart';
 import 'package:new_app/src/pages/profile/profile_page.dart';
 import 'package:new_app/src/pages/add/add_page.dart';
@@ -26,7 +26,12 @@ class _MainNavBarState extends State<MainNavBar> {
   void initState() {
     super.initState();
     _pages = [
-      HomePage(onSearchTap: () => _onTap(1)),
+      HomePage(
+        onSearchTap: () {
+          HapticFeedback.lightImpact();
+          context.read<NavTabController>().openSearch();
+        },
+      ),
       const SearchPage(),
       const VideoPage(),
       const ProfilePage(),
@@ -42,17 +47,14 @@ class _MainNavBarState extends State<MainNavBar> {
 
   void _onAddTap() {
     HapticFeedback.mediumImpact();
-    Navigator.push(
-      context,
-      MaterialPageRoute(builder: (_) => const AddPage()),
-    );
+    Navigator.push(context, MaterialPageRoute(builder: (_) => const AddPage()));
   }
 
   final List<_NavItemData> _items = const [
-    _NavItemData(icon: Icons.home_rounded,            label: 'Главная'),
-    _NavItemData(icon: Icons.search_rounded,          label: 'Поиск'),
+    _NavItemData(icon: Icons.home_rounded, label: 'Главная'),
+    _NavItemData(icon: Icons.search_rounded, label: 'Поиск'),
     _NavItemData(icon: Icons.play_circle_fill_rounded, label: 'Видео'),
-    _NavItemData(icon: Icons.person_rounded,          label: 'Профиль'),
+    _NavItemData(icon: Icons.person_rounded, label: 'Профиль'),
   ];
 
   @override
@@ -60,18 +62,20 @@ class _MainNavBarState extends State<MainNavBar> {
     final currentIndex = context.watch<NavTabController>().currentIndex;
     final isDark = currentIndex == _videoTabIndex;
 
-    return Scaffold(
-      backgroundColor: Colors.white,
-      body: _FadeIndexedStack(
-        index: currentIndex,
-        children: _pages,
-      ),
-      bottomNavigationBar: _BottomNav(
-        items: _items,
-        currentIndex: currentIndex,
-        isDark: isDark,
-        onTap: _onTap,
-        onAddTap: _onAddTap,
+    // Светлые иконки статус-бара только на тёмной ленте видео — раньше
+    // после ухода с "Видео" они оставались белыми на светлой Главной.
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: isDark ? SystemUiOverlayStyle.light : SystemUiOverlayStyle.dark,
+      child: Scaffold(
+        backgroundColor: isDark ? const Color(0xFF0C0C0C) : AppColors.bg,
+        body: _FadeIndexedStack(index: currentIndex, children: _pages),
+        bottomNavigationBar: _BottomNav(
+          items: _items,
+          currentIndex: currentIndex,
+          isDark: isDark,
+          onTap: _onTap,
+          onAddTap: _onAddTap,
+        ),
       ),
     );
   }
@@ -84,11 +88,8 @@ class _FadeIndexedStack extends StatelessWidget {
   final List<Widget> children;
   final Duration duration;
 
-  const _FadeIndexedStack({
-    required this.index,
-    required this.children,
-    this.duration = const Duration(milliseconds: 280),
-  });
+  const _FadeIndexedStack({required this.index, required this.children})
+    : duration = const Duration(milliseconds: 280);
 
   @override
   Widget build(BuildContext context) {
@@ -106,10 +107,7 @@ class _FadeIndexedStack extends StatelessWidget {
             curve: Curves.easeOutCubic,
             child: IgnorePointer(
               ignoring: !active,
-              child: TickerMode(
-                enabled: active,
-                child: children[i],
-              ),
+              child: TickerMode(enabled: active, child: children[i]),
             ),
           ),
         );
@@ -141,57 +139,59 @@ class _BottomNav extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Stack(
-      clipBehavior: Clip.none,
-      alignment: Alignment.topCenter,
-      children: [
-        AnimatedContainer(
-          duration: const Duration(milliseconds: 260),
-          curve: Curves.easeOut,
-          decoration: BoxDecoration(
-            color: isDark ? const Color(0xFF0C0C0C) : Colors.white,
-            border: Border(
-              top: BorderSide(
-                color: isDark ? Colors.white.withOpacity(0.08) : const Color(0xFFEEEEEE),
-                width: 1,
+    Widget item(int i) => _NavItem(
+      data: items[i],
+      index: i,
+      isActive: currentIndex == i,
+      isDark: isDark,
+      onTap: onTap,
+    );
+
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 320),
+      curve: Curves.easeOut,
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF0C0C0C) : Colors.white,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+        border: Border(
+          top: BorderSide(
+            color: isDark
+                ? Colors.white.withValues(alpha: 0.08)
+                : AppColors.hairline,
+          ),
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: isDark ? 0.5 : 0.06),
+            blurRadius: 24,
+            offset: const Offset(0, -6),
+          ),
+        ],
+      ),
+      child: SafeArea(
+        top: false,
+        child: SizedBox(
+          height: 68,
+          child: Row(
+            children: [
+              item(0),
+              item(1),
+              Expanded(
+                child: Center(
+                  child: _AddButton(onTap: onAddTap, isDark: isDark),
+                ),
               ),
-            ),
-            boxShadow: [
-              BoxShadow(
-                color: isDark
-                    ? Colors.black.withOpacity(0.5)
-                    : Colors.black.withOpacity(0.06),
-                blurRadius: 2.h,
-                offset: const Offset(0, -4),
-              ),
+              item(2),
+              item(3),
             ],
           ),
-          child: SafeArea(
-            top: false,
-            child: SizedBox(
-              height: 8.h,
-              child: Row(
-                children: [
-                  _NavItem(data: items[0], index: 0, isActive: currentIndex == 0, isDark: isDark, onTap: onTap),
-                  _NavItem(data: items[1], index: 1, isActive: currentIndex == 1, isDark: isDark, onTap: onTap),
-                  SizedBox(width: 18.w),
-                  _NavItem(data: items[2], index: 2, isActive: currentIndex == 2, isDark: isDark, onTap: onTap),
-                  _NavItem(data: items[3], index: 3, isActive: currentIndex == 3, isDark: isDark, onTap: onTap),
-                ],
-              ),
-            ),
-          ),
         ),
-        Positioned(
-          top: -0.7.h,
-          child: _AddButton(onTap: onAddTap, isDark: isDark),
-        ),
-      ],
+      ),
     );
   }
 }
 
-// ── Center add button (press feedback + playful spin) ──────────────────────────
+// ── Center add button (gradient squircle + press feedback + spin) ─────────────
 
 class _AddButton extends StatefulWidget {
   final VoidCallback onTap;
@@ -208,9 +208,8 @@ class _AddButtonState extends State<_AddButton> {
   @override
   Widget build(BuildContext context) {
     // На тёмном баре кнопка "+" становится белой с тёмной иконкой —
-    // фиолетовая на чёрном фоне теряла контраст с остальным UI ленты.
-    final bg = widget.isDark ? Colors.white : const Color(0xFF2D1B6E);
-    final iconColor = widget.isDark ? const Color(0xFF0C0C0C) : Colors.white;
+    // градиент на чёрном фоне терял контраст с остальным UI ленты.
+    final isDark = widget.isDark;
 
     return GestureDetector(
       onTap: widget.onTap,
@@ -219,32 +218,29 @@ class _AddButtonState extends State<_AddButton> {
       onTapCancel: () => setState(() => _down = false),
       behavior: HitTestBehavior.opaque,
       child: AnimatedScale(
-        scale: _down ? 0.88 : 1.0,
-        duration: const Duration(milliseconds: 130),
-        curve: Curves.easeOut,
+        scale: _down ? 0.86 : 1.0,
+        duration: Duration(milliseconds: _down ? 100 : 280),
+        curve: _down ? Curves.easeOut : Curves.easeOutBack,
         child: AnimatedContainer(
-          duration: const Duration(milliseconds: 200),
-          width: 6.h,
-          height: 6.h,
+          duration: const Duration(milliseconds: 300),
+          width: 54,
+          height: 54,
           decoration: BoxDecoration(
-            color: bg,
-            shape: BoxShape.circle,
-            boxShadow: [
-              BoxShadow(
-                color: bg.withOpacity(_down ? 0.5 : 0.35),
-                blurRadius: _down ? 18 : 12,
-                offset: Offset(0, _down ? 6 : 4),
-              ),
-            ],
+            gradient: isDark ? null : AppColors.primaryGradient,
+            color: isDark ? Colors.white : null,
+            borderRadius: BorderRadius.circular(18),
+            boxShadow: isDark
+                ? null
+                : AppColors.glow(AppColors.primary, _down ? 0.5 : 0.38),
           ),
           child: AnimatedRotation(
             turns: _down ? 0.125 : 0.0,
-            duration: const Duration(milliseconds: 200),
+            duration: const Duration(milliseconds: 220),
             curve: Curves.easeOut,
             child: Icon(
               Icons.add_rounded,
-              color: iconColor,
-              size: 3.2.h,
+              color: isDark ? const Color(0xFF0C0C0C) : Colors.white,
+              size: 30,
             ),
           ),
         ),
@@ -253,7 +249,7 @@ class _AddButtonState extends State<_AddButton> {
   }
 }
 
-// ── Nav item (press feedback + active bounce) ──────────────────────────────────
+// ── Nav item (press feedback + active pill + indicator dot) ───────────────────
 
 class _NavItem extends StatefulWidget {
   final _NavItemData data;
@@ -282,13 +278,11 @@ class _NavItemState extends State<_NavItem> {
     final isActive = widget.isActive;
     final isDark = widget.isDark;
 
-    // Тёмный бар: активный — белый, неактивный — приглушённый серый.
-    // Светлый бар: поведение как раньше (тёмно-фиолетовый / светло-серый).
-    final activeColor = isDark ? Colors.white : const Color.fromARGB(255, 5, 2, 19);
-    final inactiveColor = isDark ? Colors.white38 : const Color(0xFFBBBBBB);
+    final activeColor = isDark ? Colors.white : AppColors.primary;
+    final inactiveColor = isDark ? Colors.white38 : const Color(0xFFA9A9BC);
     final activeHighlight = isDark
-        ? Colors.white.withOpacity(0.12)
-        : const Color.fromARGB(255, 5, 2, 16).withOpacity(0.1);
+        ? Colors.white.withValues(alpha: 0.12)
+        : AppColors.primary.withValues(alpha: 0.10);
 
     return Expanded(
       child: GestureDetector(
@@ -304,34 +298,34 @@ class _NavItemState extends State<_NavItem> {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              AnimatedScale(
-                scale: isActive ? 1.0 : 0.92,
-                duration: const Duration(milliseconds: 260),
-                curve: Curves.easeOutBack,
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 220),
-                  curve: Curves.easeOut,
-                  padding: EdgeInsets.symmetric(
-                    horizontal: 3.5.w,
-                    vertical: 0.8.h,
-                  ),
-                  decoration: BoxDecoration(
-                    color: isActive ? activeHighlight : Colors.transparent,
-                    borderRadius: BorderRadius.circular(1.5.h),
-                  ),
+              AnimatedContainer(
+                duration: const Duration(milliseconds: 300),
+                curve: Curves.easeOutCubic,
+                padding: EdgeInsets.symmetric(
+                  horizontal: isActive ? 18 : 12,
+                  vertical: 6,
+                ),
+                decoration: BoxDecoration(
+                  color: isActive ? activeHighlight : Colors.transparent,
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: AnimatedScale(
+                  scale: isActive ? 1.08 : 1.0,
+                  duration: const Duration(milliseconds: 360),
+                  curve: Curves.easeOutBack,
                   child: Icon(
                     widget.data.icon,
-                    size: 2.8.h,
+                    size: 24,
                     color: isActive ? activeColor : inactiveColor,
                   ),
                 ),
               ),
-              SizedBox(height: 0.4.h),
+              const SizedBox(height: 4),
               AnimatedDefaultTextStyle(
                 duration: const Duration(milliseconds: 220),
                 style: TextStyle(
-                  fontSize: 11.sp,
-                  fontWeight: isActive ? FontWeight.w700 : FontWeight.w500,
+                  fontSize: 11,
+                  fontWeight: isActive ? FontWeight.w800 : FontWeight.w600,
                   color: isActive ? activeColor : inactiveColor,
                 ),
                 child: Text(widget.data.label),

@@ -300,7 +300,7 @@ class _LocationAddPageState extends State<LocationAddPage>
     final display = _str(json['display_name']) ?? city;
 
     return _PlaceResult(
-      title: display!.split(',').first.trim(),
+      title: display.split(',').first.trim(),
       subtitle: display,
       lat: lat,
       lon: lon,

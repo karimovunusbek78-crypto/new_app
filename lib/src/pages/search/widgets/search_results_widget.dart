@@ -1,74 +1,75 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:responsive_sizer/responsive_sizer.dart';
+import 'package:new_app/src/app/app_theme.dart';
+import 'package:new_app/src/app/ui_kit.dart';
 import 'package:new_app/src/pages/home/models/car.dart';
 import 'package:new_app/src/pages/home/pages/car_detail_page.dart';
 import 'package:new_app/src/pages/home/widgets/home_car_card.dart';
 import 'package:new_app/src/video/controller/main_tab_controller.dart';
-import '../search_page.dart' show ResultFilter;
 
 class SearchResultsWidget extends StatelessWidget {
   final List<Car> results;
-  final ResultFilter filter;
+  final bool videoGrid;
 
   const SearchResultsWidget({
     super.key,
     required this.results,
-    required this.filter,
+    required this.videoGrid,
   });
 
   @override
   Widget build(BuildContext context) {
-    if (results.isEmpty) return const _EmptyResults();
+    if (results.isEmpty) {
+      return const SingleChildScrollView(
+        child: Padding(
+          padding: EdgeInsets.only(top: 40),
+          child: EmptyState(
+            icon: Icons.search_off_rounded,
+            title: 'Ничего не найдено',
+            subtitle: 'Попробуйте изменить запрос\nили ослабить фильтры',
+          ),
+        ),
+      );
+    }
 
     // Фильтр "Только видео" — показываем ТОЛЬКО сами ролики (превью + плей),
     // без полной карточки объявления. Тап переключает нижний таб на "Видео"
     // (а не пушит отдельный экран) — так нижний navbar остаётся на месте,
     // и кнопка "поиск" внутри ленты корректно возвращает сюда же.
-    if (filter == ResultFilter.video) {
+    if (videoGrid) {
       return GridView.builder(
-        padding: EdgeInsets.all(3.5.w),
+        keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+        padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
         itemCount: results.length,
-        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
           crossAxisCount: 3,
-          crossAxisSpacing: 2.w,
-          mainAxisSpacing: 2.w,
+          crossAxisSpacing: 8,
+          mainAxisSpacing: 8,
           childAspectRatio: 0.62,
         ),
-        itemBuilder: (context, i) => _VideoTile(car: results[i]),
+        itemBuilder: (context, i) => FadeSlideIn(
+          delay: FadeSlideIn.stagger(i, stepMs: 35),
+          child: _VideoTile(car: results[i]),
+        ),
       );
     }
 
     // "Всё" — полная карточка объявления, как на Главной.
     return ListView.separated(
-      padding: EdgeInsets.all(3.5.w),
+      keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+      padding: const EdgeInsets.fromLTRB(20, 4, 20, 24),
       itemCount: results.length,
-      separatorBuilder: (_, __) => SizedBox(height: 2.h),
-      itemBuilder: (context, i) => _ListingCard(car: results[i]),
-    );
-  }
-}
-
-class _EmptyResults extends StatelessWidget {
-  const _EmptyResults();
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(Icons.search_off_rounded, size: 8.h, color: Colors.black26),
-          SizedBox(height: 2.h),
-          Text(
-            'Ничего не найдено',
-            style: TextStyle(
-              fontSize: 14.sp,
-              fontWeight: FontWeight.w700,
-              color: Colors.black54,
-            ),
+      separatorBuilder: (_, __) => const SizedBox(height: 18),
+      itemBuilder: (context, i) => FadeSlideIn(
+        delay: FadeSlideIn.stagger(i),
+        child: HomeCarCard(
+          car: results[i],
+          onTap: () => Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => CarDetailPage(car: results[i])),
           ),
-        ],
+        ),
       ),
     );
   }
@@ -78,27 +79,19 @@ class _EmptyResults extends StatelessWidget {
 /// иконка плей поверх. НЕ показывает цену/спеки — только сам ролик.
 ///
 /// ВАЖНО: тап НЕ делает Navigator.push(VideoPage(...)) — это создавало
-/// отдельный full-screen роут без нижнего navbar (VideoPage пушенный
-/// напрямую не имеет своего bottomNavigationBar) и ломало кнопку "поиск"
-/// внутри ленты (она дёргала NavTabController, который управляет ДРУГИМ,
-/// уже скрытым под пушенным роутом, экраном MainNavBar).
-///
-/// Вместо этого — переключаем таб через NavTabController.openVideoFeed:
-/// MainNavBar остаётся на экране (navbar виден), лента (уже живущая
-/// внутри MainNavBar) сама прыгает на нужное авто, а кнопка "поиск"
-/// внутри неё (setIndex(1)) корректно возвращает обратно на этот же
-/// экран поиска.
+/// отдельный full-screen роут без нижнего navbar. Вместо этого —
+/// переключаем таб через NavTabController.openVideoFeed.
 class _VideoTile extends StatelessWidget {
   final Car car;
   const _VideoTile({required this.car});
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
+    return Pressable(
       onTap: () =>
           context.read<NavTabController>().openVideoFeed(carId: car.id),
       child: ClipRRect(
-        borderRadius: BorderRadius.circular(2.5.w),
+        borderRadius: BorderRadius.circular(16),
         child: Stack(
           fit: StackFit.expand,
           children: [
@@ -109,40 +102,61 @@ class _VideoTile extends StatelessWidget {
                   begin: Alignment.topCenter,
                   end: Alignment.bottomCenter,
                   colors: [
-                    Colors.black.withOpacity(0.05),
-                    Colors.black.withOpacity(0.45),
+                    Colors.black.withValues(alpha: 0.0),
+                    Colors.black.withValues(alpha: 0.6),
                   ],
                 ),
               ),
             ),
-            const Center(
-              child: Icon(
-                Icons.play_circle_fill_rounded,
-                color: Colors.white,
-                size: 30,
+            Center(
+              child: Container(
+                padding: const EdgeInsets.all(6),
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.25),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.play_arrow_rounded,
+                  color: Colors.white,
+                  size: 26,
+                ),
               ),
             ),
             Positioned(
-              left: 1.5.w,
-              right: 1.5.w,
-              bottom: 1.h,
-              child: Row(
+              left: 8,
+              right: 8,
+              bottom: 8,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Icon(Icons.remove_red_eye_rounded,
-                      color: Colors.white, size: 12),
-                  SizedBox(width: 1.w),
-                  Expanded(
-                    child: Text(
-                      _fmtCount(car.viewsCount),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 10,
-                        fontWeight: FontWeight.w700,
-                        shadows: [Shadow(color: Colors.black54, blurRadius: 4)],
-                      ),
+                  Text(
+                    car.name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w800,
                     ),
+                  ),
+                  const SizedBox(height: 2),
+                  Row(
+                    children: [
+                      const Icon(
+                        Icons.remove_red_eye_rounded,
+                        color: Colors.white70,
+                        size: 12,
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        compactNumber(car.viewsCount),
+                        style: const TextStyle(
+                          color: Colors.white70,
+                          fontSize: 10.5,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
                   ),
                 ],
               ),
@@ -155,39 +169,14 @@ class _VideoTile extends StatelessWidget {
 
   Widget _thumb() {
     if (car.photoPaths.isNotEmpty) {
-      return Image.network(
-        car.photoPaths.first,
+      return CachedNetworkImage(
+        imageUrl: car.photoPaths.first,
         fit: BoxFit.cover,
-        errorBuilder: (_, __, ___) => Container(color: Colors.black26),
+        memCacheWidth: 300,
+        placeholder: (_, __) => Container(color: AppColors.surfaceAlt),
+        errorWidget: (_, __, ___) => Container(color: Colors.black26),
       );
     }
     return Container(color: Colors.black26);
-  }
-
-  String _fmtCount(int n) {
-    if (n >= 1000000) return '${(n / 1000000).toStringAsFixed(1)}M';
-    if (n >= 1000) {
-      final v = n / 1000;
-      return '${v.toStringAsFixed(v >= 10 ? 0 : 1)}K';
-    }
-    return '$n';
-  }
-}
-
-/// Полная карточка объявления (та же, что и на Главной) — фото,
-/// цена, теги, локация. Тап -> страница деталей авто.
-class _ListingCard extends StatelessWidget {
-  final Car car;
-  const _ListingCard({required this.car});
-
-  @override
-  Widget build(BuildContext context) {
-    return HomeCarCard(
-      car: car,
-      onTap: () => Navigator.push(
-        context,
-        MaterialPageRoute(builder: (_) => CarDetailPage(car: car)),
-      ),
-    );
   }
 }

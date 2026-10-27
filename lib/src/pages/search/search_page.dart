@@ -1,15 +1,18 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:new_app/src/app/app_theme.dart';
 import 'package:new_app/src/pages/home/models/car.dart';
 import 'package:new_app/src/pages/home/providers/cars_provider.dart';
+import 'package:new_app/src/video/controller/main_tab_controller.dart';
+import 'search_filters.dart';
+import 'widgets/filter_sheet.dart';
 import 'widgets/search_bar_widget.dart';
-import 'widgets/price_filter_widget.dart';
 import 'widgets/suggestions_view_widget.dart';
 import 'widgets/search_results_widget.dart';
 import 'widgets/category_grid_widget.dart';
 import 'widgets/brand_list_widget.dart';
-
-enum ResultFilter { all, video, listing }
 
 class SearchPage extends StatefulWidget {
   const SearchPage({super.key});
@@ -19,31 +22,33 @@ class SearchPage extends StatefulWidget {
 }
 
 class _SearchPageState extends State<SearchPage> {
+  static const _recentKey = 'search.recent';
+
   final TextEditingController _controller = TextEditingController();
   final FocusNode _focusNode = FocusNode();
-  final TextEditingController _minPriceController = TextEditingController();
-  final TextEditingController _maxPriceController = TextEditingController();
 
-  ResultFilter _filter = ResultFilter.all;
+  SearchFilters _filters = const SearchFilters();
+  SortMode _sort = SortMode.newest;
+  List<String> _recentSearches = [];
+  NavTabController? _nav;
 
-  final List<String> _recentSearches = [
-    'BMW M4',
-    'Audi RS7 2024',
-    'Tesla Model 3',
+  static const List<CarCategory> _categories = [
+    CarCategory('Седан', Icons.directions_car_rounded, Color(0xFF5B4CF0)),
+    CarCategory('Внедорожник', Icons.terrain_rounded, Color(0xFF16A34A)),
+    CarCategory('Хэтчбек', Icons.commute_rounded, Color(0xFFF59E0B)),
+    CarCategory('Купе', Icons.sports_score_rounded, Color(0xFFEF4444)),
+    CarCategory('Универсал', Icons.airport_shuttle_rounded, Color(0xFF0EA5E9)),
+    CarCategory('Минивэн', Icons.family_restroom_rounded, Color(0xFFA855F7)),
+    CarCategory(
+      'Электро',
+      Icons.electric_bolt_rounded,
+      Color(0xFF14B8A6),
+      isFuel: true,
+    ),
+    CarCategory('Гибрид', Icons.eco_rounded, Color(0xFF65A30D), isFuel: true),
   ];
 
-  final List<CarCategory> _categories = const [
-    CarCategory('Седан', Icons.directions_car),
-    CarCategory('Внедорожник', Icons.directions_car_filled),
-    CarCategory('Хэтчбэк', Icons.commute),
-    CarCategory('Купе', Icons.time_to_leave),
-    CarCategory('Кроссовер', Icons.terrain),
-    CarCategory('Минивэн', Icons.airport_shuttle),
-    CarCategory('Пикап', Icons.local_shipping),
-    CarCategory('Электро', Icons.electric_bolt),
-  ];
-
-  final List<CarBrand> _brands = const [
+  static const List<CarBrand> _brands = [
     CarBrand('BMW', 'assets/images/bmw.png'),
     CarBrand('Audi', 'assets/images/audi.png'),
     CarBrand('Mercedes', 'assets/images/mersedes.png'),
@@ -57,128 +62,219 @@ class _SearchPageState extends State<SearchPage> {
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _focusNode.requestFocus();
-    });
+    _loadRecent();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final nav = context.read<NavTabController>();
+    if (!identical(nav, _nav)) {
+      _nav?.removeListener(_onNavChanged);
+      _nav = nav..addListener(_onNavChanged);
+    }
+  }
+
+  /// Фокус ставим только когда таб "Поиск" реально открыли (например,
+  /// тапом по строке поиска на Главной), а при уходе с таба — снимаем,
+  /// чтобы клавиатура не висела поверх других экранов.
+  void _onNavChanged() {
+    final nav = _nav!;
+    if (nav.currentIndex == 1 && nav.pendingSearchFocus) {
+      nav.pendingSearchFocus = false;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _focusNode.requestFocus();
+      });
+    } else if (nav.currentIndex != 1 && _focusNode.hasFocus) {
+      _focusNode.unfocus();
+    }
   }
 
   @override
   void dispose() {
+    _nav?.removeListener(_onNavChanged);
     _controller.dispose();
     _focusNode.dispose();
-    _minPriceController.dispose();
-    _maxPriceController.dispose();
     super.dispose();
   }
 
-  double _parsePrice(String price) {
-    final digitsOnly = price.replaceAll(RegExp(r'[^0-9]'), '');
-    if (digitsOnly.isEmpty) return 0;
-    return double.parse(digitsOnly);
+  Future<void> _loadRecent() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final saved = prefs.getStringList(_recentKey) ?? const [];
+      if (mounted) setState(() => _recentSearches = [...saved]);
+    } catch (_) {}
   }
 
-  bool _hasActiveFilter() {
-    return _controller.text.trim().isNotEmpty ||
-        _minPriceController.text.trim().isNotEmpty ||
-        _maxPriceController.text.trim().isNotEmpty ||
-        _filter != ResultFilter.all;
+  Future<void> _saveRecent() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setStringList(_recentKey, _recentSearches);
+    } catch (_) {}
   }
 
-  List<Car> _getFilteredCars(List<Car> source) {
-    final q = _controller.text.trim().toLowerCase();
-    final minPrice = double.tryParse(_minPriceController.text.trim());
-    final maxPrice = double.tryParse(_maxPriceController.text.trim());
+  bool get _hasActiveSearch =>
+      _controller.text.trim().isNotEmpty || !_filters.isEmpty;
 
-    return source.where((car) {
-      final hasVideo = car.videoPath != null && car.videoPath!.isNotEmpty;
-      final matchesFilter = switch (_filter) {
-        ResultFilter.all => true,
-        ResultFilter.video => hasVideo,
-        ResultFilter.listing => !hasVideo,
-      };
-      if (!matchesFilter) return false;
-
-      final matchesQuery = q.isEmpty ||
-          car.name.toLowerCase().contains(q) ||
-          car.year.toLowerCase().contains(q) ||
-          car.bodyType.toLowerCase().contains(q) ||
-          car.color.toLowerCase().contains(q) ||
-          car.location.toLowerCase().contains(q) ||
-          car.fuelType.toLowerCase().contains(q) ||
-          car.engineCapacity.toLowerCase().contains(q) ||
-          car.transmission.toLowerCase().contains(q);
-
-      final carPrice = _parsePrice(car.price);
-      final matchesMin = minPrice == null || carPrice >= minPrice;
-      final matchesMax = maxPrice == null || carPrice <= maxPrice;
-
-      return matchesQuery && matchesMin && matchesMax;
-    }).toList();
-  }
+  List<Car> _results(List<Car> source, [SearchFilters? filters]) => applySearch(
+    source,
+    query: _controller.text,
+    filters: filters ?? _filters,
+    sort: _sort,
+  );
 
   void _registerSearch(String term) {
-    if (term.trim().isEmpty) return;
+    term = term.trim();
+    if (term.isEmpty) return;
     setState(() {
       _recentSearches.remove(term);
       _recentSearches.insert(0, term);
       if (_recentSearches.length > 8) _recentSearches.removeLast();
     });
+    _saveRecent();
   }
 
   void _selectTerm(String term) {
     _controller.text = term;
-    _controller.selection =
-        TextSelection.fromPosition(TextPosition(offset: term.length));
+    _controller.selection = TextSelection.fromPosition(
+      TextPosition(offset: term.length),
+    );
+    _focusNode.unfocus();
     _registerSearch(term);
-    setState(() {});
+  }
+
+  void _selectCategory(CarCategory cat) {
+    HapticFeedback.selectionClick();
+    _focusNode.unfocus();
+    setState(() {
+      _filters = cat.isFuel
+          ? _filters.copyWith(fuelTypes: {cat.label})
+          : _filters.copyWith(bodyTypes: {cat.label});
+    });
+  }
+
+  Future<void> _openFilters(List<Car> source) async {
+    _focusNode.unfocus();
+    final result = await showFilterSheet(
+      context,
+      initial: _filters,
+      preview: (f) => _results(source, f),
+    );
+    if (result != null && mounted) setState(() => _filters = result);
+  }
+
+  void _resetAll() {
+    HapticFeedback.lightImpact();
+    _controller.clear();
+    setState(() => _filters = const SearchFilters());
   }
 
   @override
   Widget build(BuildContext context) {
     // CarsProvider.cars — полный список опубликованных объявлений
     // (тот же источник, что использует Главная).
-    final allPublishedCars = context.watch<CarsProvider>().cars;
+    final provider = context.watch<CarsProvider>();
+    final allPublishedCars = provider.cars;
+    final active = _hasActiveSearch;
+    final results = active ? _results(allPublishedCars) : const <Car>[];
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F5F7),
+      backgroundColor: AppColors.bg,
       body: SafeArea(
+        bottom: false,
         child: Column(
           children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 12, 20, 12),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  const Expanded(
+                    child: Text(
+                      'Поиск',
+                      style: TextStyle(
+                        fontSize: 32,
+                        fontWeight: FontWeight.w800,
+                        color: AppColors.ink,
+                        letterSpacing: -1,
+                      ),
+                    ),
+                  ),
+                  AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 250),
+                    child: Text(
+                      provider.isLoading
+                          ? ''
+                          : active
+                          ? 'Найдено: ${formatThousands(results.length)}'
+                          : '${formatThousands(allPublishedCars.length)} объявлений',
+                      key: ValueKey('$active${results.length}'),
+                      style: const TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.muted,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
             SearchBarWidget(
               controller: _controller,
               focusNode: _focusNode,
               onChanged: () => setState(() {}),
               onSubmitted: _registerSearch,
+              onFilterTap: () => _openFilters(allPublishedCars),
+              activeFilters: _filters.activeCount,
             ),
-            _FilterChipsRow(
-              current: _filter,
-              onChanged: (f) => setState(() => _filter = f),
-            ),
-            PriceFilterWidget(
-              minController: _minPriceController,
-              maxController: _maxPriceController,
-              onChanged: () => setState(() {}),
-              onClear: () => setState(() {
-                _minPriceController.clear();
-                _maxPriceController.clear();
-              }),
+            _QuickChipsRow(
+              sort: _sort,
+              filters: _filters,
+              showReset: active,
+              onSort: (s) => setState(() => _sort = s),
+              onVideo: (v) =>
+                  setState(() => _filters = _filters.copyWith(onlyVideo: v)),
+              onReset: _resetAll,
             ),
             Expanded(
-              child: _hasActiveFilter()
-                  ? SearchResultsWidget(
-                      results: _getFilteredCars(allPublishedCars),
-                      filter: _filter,
+              child: AnimatedSwitcher(
+                duration: const Duration(milliseconds: 280),
+                switchInCurve: Curves.easeOutCubic,
+                transitionBuilder: (child, anim) => FadeTransition(
+                  opacity: anim,
+                  child: SlideTransition(
+                    position: Tween(
+                      begin: const Offset(0, 0.03),
+                      end: Offset.zero,
+                    ).animate(anim),
+                    child: child,
+                  ),
+                ),
+                child: active
+                    ? SearchResultsWidget(
+                        key: ValueKey(
+                          'results-${_sort.name}-${_filters.onlyVideo}',
+                        ),
+                        results: results,
+                        videoGrid: _filters.onlyVideo,
                       )
-                  : SuggestionsViewWidget(
-                      recentSearches: _recentSearches,
-                      categories: _categories,
-                      brands: _brands,
-                      onSelect: _selectTerm,
-                      onRemoveRecent: (term) =>
-                          setState(() => _recentSearches.remove(term)),
-                      onClearRecent: () =>
-                          setState(() => _recentSearches.clear()),
-                    ),
+                    : SuggestionsViewWidget(
+                        key: const ValueKey('suggestions'),
+                        recentSearches: _recentSearches,
+                        categories: _categories,
+                        brands: _brands,
+                        onSelect: _selectTerm,
+                        onCategory: _selectCategory,
+                        onRemoveRecent: (term) {
+                          setState(() => _recentSearches.remove(term));
+                          _saveRecent();
+                        },
+                        onClearRecent: () {
+                          setState(() => _recentSearches.clear());
+                          _saveRecent();
+                        },
+                      ),
+              ),
             ),
           ],
         ),
@@ -187,66 +283,64 @@ class _SearchPageState extends State<SearchPage> {
   }
 }
 
-class _FilterChipsRow extends StatelessWidget {
-  final ResultFilter current;
-  final ValueChanged<ResultFilter> onChanged;
+class _QuickChipsRow extends StatelessWidget {
+  final SortMode sort;
+  final SearchFilters filters;
+  final bool showReset;
+  final ValueChanged<SortMode> onSort;
+  final ValueChanged<bool> onVideo;
+  final VoidCallback onReset;
 
-  const _FilterChipsRow({required this.current, required this.onChanged});
+  const _QuickChipsRow({
+    required this.sort,
+    required this.filters,
+    required this.showReset,
+    required this.onSort,
+    required this.onVideo,
+    required this.onReset,
+  });
 
   @override
   Widget build(BuildContext context) {
-    final options = const [
-      (ResultFilter.all, 'Всё', Icons.apps_rounded),
-      (ResultFilter.video, 'Только видео', Icons.play_circle_fill_rounded),
-    ];
-
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
-      child: SizedBox(
-        height: 36,
-        child: ListView.separated(
-          scrollDirection: Axis.horizontal,
-          itemCount: options.length,
-          separatorBuilder: (_, __) => const SizedBox(width: 8),
-          itemBuilder: (context, i) {
-            final (value, label, icon) = options[i];
-            final selected = current == value;
-            return GestureDetector(
-              onTap: () => onChanged(value),
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 150),
-                padding: const EdgeInsets.symmetric(horizontal: 14),
-                decoration: BoxDecoration(
-                  color: selected ? const Color(0xFF2D1B6E) : Colors.white,
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(
-                    color: selected
-                        ? const Color(0xFF2D1B6E)
-                        : const Color(0xFFE0E0E0),
-                  ),
-                ),
-                alignment: Alignment.center,
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(icon,
-                        size: 16,
-                        color: selected ? Colors.white : Colors.black54),
-                    const SizedBox(width: 6),
-                    Text(
-                      label,
-                      style: TextStyle(
-                        fontSize: 12.5,
-                        fontWeight: FontWeight.w600,
-                        color: selected ? Colors.white : Colors.black87,
-                      ),
-                    ),
-                  ],
-                ),
+    return SizedBox(
+      height: 44,
+      child: ListView(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 20),
+        children: [
+          Center(
+            child: SelectChip(
+              label: 'Видео',
+              icon: Icons.play_circle_fill_rounded,
+              selected: filters.onlyVideo,
+              onTap: () => onVideo(!filters.onlyVideo),
+            ),
+          ),
+          Container(
+            width: 1,
+            margin: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+            color: AppColors.hairline,
+          ),
+          for (final s in SortMode.values) ...[
+            Center(
+              child: SelectChip(
+                label: s.label,
+                selected: sort == s,
+                onTap: () => onSort(s),
               ),
-            );
-          },
-        ),
+            ),
+            const SizedBox(width: 8),
+          ],
+          if (showReset)
+            Center(
+              child: SelectChip(
+                label: 'Сбросить всё',
+                icon: Icons.restart_alt_rounded,
+                selected: false,
+                onTap: onReset,
+              ),
+            ),
+        ],
       ),
     );
   }

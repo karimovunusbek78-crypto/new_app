@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
-import 'package:new_app/src/authentifications/sign_in/sign_in.dart';
 import 'package:responsive_sizer/responsive_sizer.dart';
 
 class WelcomePage extends StatefulWidget {
-  const WelcomePage({Key? key, required void Function() onDone}) : super(key: key);
+  final VoidCallback onDone;
+
+  const WelcomePage({Key? key, required this.onDone}) : super(key: key);
 
   @override
   _WelcomePageState createState() => _WelcomePageState();
@@ -237,14 +238,7 @@ class _WelcomePageState extends State<WelcomePage>
                                 width: double.infinity,
                                 height: 6.5.h,
                                 child: ElevatedButton(
-                                  onPressed: () {
-                                    Navigator.push(
-                                      context,
-                                      MaterialPageRoute(
-                                        builder: (context) => const SignIn(),
-                                      ),
-                                    );
-                                  },
+                                  onPressed: widget.onDone,
                                   style: ElevatedButton.styleFrom(
                                     backgroundColor: const Color(0xFF1C1C1E),
                                     foregroundColor: Colors.white,

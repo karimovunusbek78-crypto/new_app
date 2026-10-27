@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:new_app/src/pages/home/notification/app_notification.dart';
 
@@ -21,6 +22,19 @@ import 'package:new_app/src/pages/home/notification/app_notification.dart';
 /// ПОСЛЕ первой загрузки (не исторические) — на него подписан
 /// NotificationBannerHost, чтобы показать слайд-карточку сверху экрана.
 class NotificationsProvider extends ChangeNotifier {
+  /// Сам следит за входом/выходом — раньше start(uid) нигде не вызывался,
+  /// и уведомления в приложении не работали вообще.
+  NotificationsProvider() {
+    _authSub = FirebaseAuth.instance.authStateChanges().listen((user) {
+      if (user != null) {
+        start(user.uid);
+      } else if (_uid != null) {
+        stop();
+      }
+    });
+  }
+
+  StreamSubscription<User?>? _authSub;
   StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _sub;
   String? _uid;
   bool _initialLoadDone = false;
@@ -118,6 +132,7 @@ class NotificationsProvider extends ChangeNotifier {
 
   @override
   void dispose() {
+    _authSub?.cancel();
     _sub?.cancel();
     super.dispose();
   }

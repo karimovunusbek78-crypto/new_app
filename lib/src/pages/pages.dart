@@ -14,7 +14,7 @@ export 'favorite/providers/favorites_provider.dart';
 export 'home/models/cars_data.dart';
 export 'search/widgets/brand_list_widget.dart';
 export 'search/widgets/category_grid_widget.dart';
-export 'search/widgets/price_filter_widget.dart';
+export 'search/search_filters.dart';
 export 'search/widgets/search_bar_widget.dart';
 export 'search/widgets/search_results_widget.dart';
 export 'search/widgets/suggestions_view_widget.dart';

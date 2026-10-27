@@ -99,7 +99,9 @@ class _CarPhotoCarouselState extends State<CarPhotoCarousel> {
                       width: active ? 2.2.w : 1.6.w,
                       height: 1.6.w,
                       decoration: BoxDecoration(
-                        color: active ? Colors.white : Colors.white.withOpacity(0.5),
+                        color: active
+                            ? Colors.white
+                            : Colors.white.withOpacity(0.5),
                         borderRadius: BorderRadius.circular(1.h),
                       ),
                     );
@@ -149,8 +151,10 @@ class _CarouselImage extends StatelessWidget {
         placeholder: (_, __) => Container(color: const Color(0xFFE5E5EA)),
         errorWidget: (_, __, ___) => Container(
           color: const Color(0xFFE5E5EA),
-          child: const Icon(Icons.directions_car_rounded,
-              color: Color(0xFFC7C7CC)),
+          child: const Icon(
+            Icons.directions_car_rounded,
+            color: Color(0xFFC7C7CC),
+          ),
         ),
       );
     }
@@ -168,8 +172,10 @@ class _CarouselImage extends StatelessWidget {
       cacheHeight: cacheHeight > 0 ? cacheHeight : null,
       errorBuilder: (_, __, ___) => Container(
         color: const Color(0xFFE5E5EA),
-        child: const Icon(Icons.directions_car_rounded,
-            color: Color(0xFFC7C7CC)),
+        child: const Icon(
+          Icons.directions_car_rounded,
+          color: Color(0xFFC7C7CC),
+        ),
       ),
     );
   }

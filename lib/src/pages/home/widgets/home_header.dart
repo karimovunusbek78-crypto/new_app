@@ -1,14 +1,14 @@
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:new_app/src/app/app_theme.dart';
+import 'package:new_app/src/app/ui_kit.dart';
 import 'package:new_app/src/pages/home/notification/notification_page.dart';
 import 'package:provider/provider.dart';
-import 'package:responsive_sizer/responsive_sizer.dart';
 
 import 'package:new_app/src/pages/home/notification/notifications_provider.dart';
 
 class HomeHeader extends StatelessWidget {
-  final String displayName;
-
-  const HomeHeader({super.key, required this.displayName});
+  const HomeHeader({super.key});
 
   String _getGreeting() {
     final hour = DateTime.now().hour;
@@ -33,81 +33,128 @@ class HomeHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: EdgeInsets.symmetric(horizontal: 5.w, vertical: 2.h),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+    // userChanges (а не currentUser один раз) — после регистрации имя
+    // сохраняется чуть позже входа, и раньше на Главной до перезапуска
+    // висело "Пользователь".
+    return StreamBuilder<User?>(
+      stream: FirebaseAuth.instance.userChanges(),
+      initialData: FirebaseAuth.instance.currentUser,
+      builder: (context, snap) {
+        final user = snap.data;
+        final name = (user?.displayName?.trim().isNotEmpty ?? false)
+            ? user!.displayName!.trim()
+            : 'Пользователь';
+        final photo = user?.photoURL;
+
+        return Padding(
+          padding: const EdgeInsets.fromLTRB(20, 12, 20, 18),
+          child: Row(
             children: [
-              Text(
-                _getGreeting(),
-                style: TextStyle(
-                  fontSize: 14.sp,
-                  color: const Color(0xFF8E8E93),
-                  fontWeight: FontWeight.w400,
+              Container(
+                width: 50,
+                height: 50,
+                padding: const EdgeInsets.all(2),
+                decoration: const BoxDecoration(
+                  gradient: AppColors.primaryGradient,
+                  shape: BoxShape.circle,
+                ),
+                child: CircleAvatar(
+                  backgroundColor: Colors.white,
+                  backgroundImage: (photo != null && photo.isNotEmpty)
+                      ? NetworkImage(photo)
+                      : null,
+                  child: (photo != null && photo.isNotEmpty)
+                      ? null
+                      : Text(
+                          name.characters.first.toUpperCase(),
+                          style: const TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.w800,
+                            color: AppColors.primary,
+                          ),
+                        ),
                 ),
               ),
-              SizedBox(height: 0.4.h),
-              Text(
-                displayName,
-                style: TextStyle(
-                  fontSize: 22.sp,
-                  fontWeight: FontWeight.w700,
-                  color: const Color(0xFF1C1C1E),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '${_getGreeting()} 👋',
+                      style: const TextStyle(
+                        fontSize: 14,
+                        color: AppColors.muted,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 22,
+                        fontWeight: FontWeight.w800,
+                        color: AppColors.ink,
+                        letterSpacing: -0.5,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Pressable(
+                onTap: () => _openNotifications(context),
+                child: Consumer<NotificationsProvider>(
+                  builder: (context, notifications, _) {
+                    final hasUnread = notifications.hasUnread;
+                    return Stack(
+                      clipBehavior: Clip.none,
+                      children: [
+                        Container(
+                          width: 48,
+                          height: 48,
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(16),
+                            boxShadow: AppColors.softShadow(),
+                          ),
+                          child: const Icon(
+                            Icons.notifications_none_rounded,
+                            color: AppColors.ink,
+                            size: 25,
+                          ),
+                        ),
+                        Positioned(
+                          top: 10,
+                          right: 11,
+                          child: AnimatedScale(
+                            scale: hasUnread ? 1 : 0,
+                            duration: const Duration(milliseconds: 350),
+                            curve: Curves.easeOutBack,
+                            child: Container(
+                              width: 10,
+                              height: 10,
+                              decoration: BoxDecoration(
+                                color: AppColors.like,
+                                shape: BoxShape.circle,
+                                border: Border.all(
+                                  color: Colors.white,
+                                  width: 2,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    );
+                  },
                 ),
               ),
             ],
           ),
-          GestureDetector(
-            onTap: () => _openNotifications(context),
-            behavior: HitTestBehavior.opaque,
-            child: Consumer<NotificationsProvider>(
-              builder: (context, notifications, _) {
-                final hasUnread = notifications.hasUnread;
-                return Stack(
-                  children: [
-                    Container(
-                      width: 11.w,
-                      height: 11.w,
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        shape: BoxShape.circle,
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withOpacity(0.08),
-                            blurRadius: 12,
-                            offset: const Offset(0, 2),
-                          ),
-                        ],
-                      ),
-                      child: Icon(
-                        Icons.notifications_outlined,
-                        color: const Color(0xFF1C1C1E),
-                        size: 2.5.h,
-                      ),
-                    ),
-                    if (hasUnread)
-                      Positioned(
-                        top: 1.w,
-                        right: 1.w,
-                        child: Container(
-                          width: 2.w,
-                          height: 2.w,
-                          decoration: const BoxDecoration(
-                            color: Color(0xFF3A6FF8),
-                            shape: BoxShape.circle,
-                          ),
-                        ),
-                      ),
-                  ],
-                );
-              },
-            ),
-          ),
-        ],
-      ),
+        );
+      },
     );
   }
 }

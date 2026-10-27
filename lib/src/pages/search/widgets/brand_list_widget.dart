@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:responsive_sizer/responsive_sizer.dart';
+import 'package:new_app/src/app/app_theme.dart';
+import 'package:new_app/src/app/ui_kit.dart';
 
 class CarBrand {
   final String name;
@@ -20,55 +21,56 @@ class BrandListWidget extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      height: 11.h,
+      height: 104,
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
-        padding: EdgeInsets.symmetric(horizontal: 5.w),
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
         itemCount: brands.length,
-        separatorBuilder: (_, __) => SizedBox(width: 4.w),
+        separatorBuilder: (_, __) => const SizedBox(width: 12),
         itemBuilder: (context, index) {
           final brand = brands[index];
-          return GestureDetector(
-            onTap: () => onSelect(brand.name),
-            child: Column(
-              children: [
-                Container(
-                  width: 9.h,
-                  height: 7.h,
-                  padding: EdgeInsets.all(1.2.h),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    shape: BoxShape.circle,
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.05),
-                        blurRadius: 8,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
-                  ),
-                  child: Image.asset(
-                    brand.logoPath,
-                    fit: BoxFit.contain,
-                    errorBuilder: (_, __, ___) => Center(
-                      child: Text(
-                        brand.name.substring(0, 1),
-                        style: TextStyle(
-                          fontSize: 40.sp,
-                          fontWeight: FontWeight.w700,
-                          color: const Color(0xFF1C1C1E),
+          return FadeSlideIn(
+            delay: FadeSlideIn.stagger(index, stepMs: 50),
+            offset: const Offset(24, 0),
+            child: Pressable(
+              onTap: () => onSelect(brand.name),
+              child: Column(
+                children: [
+                  Container(
+                    width: 68,
+                    height: 68,
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(22),
+                      boxShadow: AppColors.softShadow(0.05),
+                    ),
+                    child: Image.asset(
+                      brand.logoPath,
+                      fit: BoxFit.contain,
+                      errorBuilder: (_, __, ___) => Center(
+                        child: Text(
+                          brand.name.substring(0, 1),
+                          style: const TextStyle(
+                            fontSize: 24,
+                            fontWeight: FontWeight.w800,
+                            color: AppColors.ink,
+                          ),
                         ),
                       ),
                     ),
                   ),
-                ),
-                SizedBox(height: 0.8.h),
-                Text(
-                  brand.name,
-                  style: TextStyle(
-                      fontSize: 11.sp, color: const Color(0xFF1C1C1E)),
-                ),
-              ],
+                  const SizedBox(height: 8),
+                  Text(
+                    brand.name,
+                    style: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.inkSoft,
+                    ),
+                  ),
+                ],
+              ),
             ),
           );
         },

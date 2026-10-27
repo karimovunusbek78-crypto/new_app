@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:responsive_sizer/responsive_sizer.dart';
+import 'package:new_app/src/app/app_theme.dart';
+import 'package:new_app/src/app/ui_kit.dart';
 
 class HomeSearchBar extends StatelessWidget {
   final VoidCallback? onTap;
@@ -9,33 +10,50 @@ class HomeSearchBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: EdgeInsets.symmetric(horizontal: 5.w),
-      child: GestureDetector(
+      padding: const EdgeInsets.symmetric(horizontal: 20),
+      child: Pressable(
         onTap: onTap,
+        scale: 0.98,
         child: Container(
-          height: 6.h,
+          height: 56,
           decoration: BoxDecoration(
             color: Colors.white,
-            borderRadius: BorderRadius.circular(3.5.w),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.06),
-                blurRadius: 10,
-                offset: const Offset(0, 2),
-              ),
-            ],
+            borderRadius: BorderRadius.circular(18),
+            boxShadow: AppColors.softShadow(),
           ),
           child: Row(
             children: [
-              SizedBox(width: 3.5.w),
-              Icon(Icons.search, color: const Color(0xFF8E8E93), size: 2.4.h),
-              SizedBox(width: 2.5.w),
-              Text(
-                'Поиск авто, марок или моделей...',
-                style: TextStyle(
-                  fontSize: 14.sp,
-                  color: const Color(0xFFAEAEB2),
-                  fontWeight: FontWeight.w400,
+              const SizedBox(width: 16),
+              const Icon(
+                Icons.search_rounded,
+                color: AppColors.muted,
+                size: 24,
+              ),
+              const SizedBox(width: 10),
+              const Expanded(
+                child: Text(
+                  'Найти авто, марку или модель',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 15,
+                    color: AppColors.hint,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+              Container(
+                width: 42,
+                height: 42,
+                margin: const EdgeInsets.only(right: 7),
+                decoration: BoxDecoration(
+                  gradient: AppColors.primaryGradient,
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: const Icon(
+                  Icons.tune_rounded,
+                  color: Colors.white,
+                  size: 21,
                 ),
               ),
             ],

@@ -2,7 +2,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:provider/provider.dart';
-import 'package:responsive_sizer/responsive_sizer.dart';
+import 'package:new_app/src/app/app_theme.dart';
+import 'package:new_app/src/app/ui_kit.dart';
 
 import 'package:new_app/src/pages/home/providers/cars_provider.dart';
 import 'package:new_app/src/pages/home/widgets/autasalon_list.dart';
@@ -19,30 +20,29 @@ class HomePage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final user = FirebaseAuth.instance.currentUser;
-    final displayName =
-        (user?.displayName != null && user!.displayName!.trim().isNotEmpty)
-            ? user.displayName!
-            : 'Пользователь';
+    // Каждая секция появляется с небольшой задержкой — "лесенкой".
+    Widget section(int i, Widget child) =>
+        FadeSlideIn(delay: FadeSlideIn.stagger(i, stepMs: 90), child: child);
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F5F7),
+      backgroundColor: AppColors.bg,
       body: SafeArea(
+        bottom: false,
         child: SingleChildScrollView(
+          physics: const BouncingScrollPhysics(),
+          padding: const EdgeInsets.only(bottom: 32),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              HomeHeader(displayName: displayName),
-              HomeSearchBar(onTap: onSearchTap),
-              SizedBox(height: 2.5.h),
-              const HomeBanner(),
-              SizedBox(height: 3.h),
-              const _MyAutosalonEntryCard(),
-              const _MyPublicationsEntryCard(),
-              const AutosalonList(),
-              SizedBox(height: 3.h),
-              const FeaturedCarsList(),
-              SizedBox(height: 3.h),
+              section(0, const HomeHeader()),
+              section(1, HomeSearchBar(onTap: onSearchTap)),
+              const SizedBox(height: 22),
+              section(2, const HomeBanner()),
+              const SizedBox(height: 26),
+              section(3, const _MyAutosalonEntryCard()),
+              section(3, const _MyPublicationsEntryCard()),
+              section(4, const AutosalonList()),
+              section(5, const FeaturedCarsList()),
             ],
           ),
         ),
@@ -58,9 +58,6 @@ class HomePage extends StatelessWidget {
 /// (там уже и сетка публикаций, и статистика).
 class _MyPublicationsEntryCard extends StatelessWidget {
   const _MyPublicationsEntryCard();
-
-  static const _ink = Color(0xFF111111);
-  static const _grey = Color(0xFF8A8A90);
 
   void _openMyProfile(BuildContext context) {
     final uid = FirebaseAuth.instance.currentUser?.uid;
@@ -81,53 +78,65 @@ class _MyPublicationsEntryCard extends StatelessWidget {
     final myCarsCount = context.watch<CarsProvider>().myCars(uid).length;
 
     return Padding(
-      padding: EdgeInsets.fromLTRB(4.w, 0, 4.w, 3.h),
-      child: GestureDetector(
+      padding: const EdgeInsets.fromLTRB(20, 0, 20, 28),
+      child: Pressable(
         onTap: () => _openMyProfile(context),
-        behavior: HitTestBehavior.opaque,
         child: Container(
-          padding: EdgeInsets.symmetric(horizontal: 4.w, vertical: 2.h),
+          padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
             color: Colors.white,
-            borderRadius: BorderRadius.circular(4.w),
-            border: Border.all(color: const Color(0xFFEFEFEF)),
+            borderRadius: BorderRadius.circular(22),
+            boxShadow: AppColors.softShadow(),
           ),
           child: Row(
             children: [
               Container(
-                width: 10.w,
-                height: 10.w,
+                width: 48,
+                height: 48,
                 decoration: BoxDecoration(
-                  color: const Color(0xFFF5F5F7),
-                  shape: BoxShape.circle,
+                  gradient: AppColors.primaryGradient,
+                  borderRadius: BorderRadius.circular(16),
                 ),
-                child: Icon(Icons.person_pin_circle_outlined,
-                    color: _ink, size: 2.6.h),
+                child: const Icon(Icons.insights_rounded,
+                    color: Colors.white, size: 26),
               ),
-              SizedBox(width: 3.w),
+              const SizedBox(width: 14),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      'Мой профиль публикаций',
+                    const Text(
+                      'Мои публикации',
                       style: TextStyle(
-                        fontSize: 13.5.sp,
+                        fontSize: 16,
                         fontWeight: FontWeight.w800,
-                        color: _ink,
+                        color: AppColors.ink,
                       ),
                     ),
-                    SizedBox(height: 0.3.h),
+                    const SizedBox(height: 2),
                     Text(
                       myCarsCount > 0
                           ? '$myCarsCount объявлений · статистика'
                           : 'Ваши объявления и статистика',
-                      style: TextStyle(fontSize: 10.5.sp, color: _grey),
+                      style: const TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.muted,
+                      ),
                     ),
                   ],
                 ),
               ),
-              Icon(Icons.chevron_right_rounded, color: _grey, size: 2.4.h),
+              Container(
+                width: 34,
+                height: 34,
+                decoration: const BoxDecoration(
+                  color: AppColors.surfaceAlt,
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.arrow_forward_ios_rounded,
+                    color: AppColors.inkSoft, size: 15),
+              ),
             ],
           ),
         ),
@@ -152,10 +161,6 @@ class _MyPublicationsEntryCard extends StatelessWidget {
 class _MyAutosalonEntryCard extends StatelessWidget {
   const _MyAutosalonEntryCard();
 
-  static const _ink = Color(0xFF1C1C1E);
-  static const _grey = Color(0xFF8E8E93);
-  static const _accent = Color(0xFF3A6FF8);
-
   @override
   Widget build(BuildContext context) {
     final uid = FirebaseAuth.instance.currentUser?.uid;
@@ -176,44 +181,48 @@ class _MyAutosalonEntryCard extends StatelessWidget {
         final logoUrl = salon['logoUrl'] as String?;
         final hasLogo = logoUrl != null && logoUrl.isNotEmpty;
 
+        // Живая статистика по всем машинам этого автосалона — считается
+        // на лету из уже загруженного CarsProvider (без отдельного
+        // Firestore-запроса), чтобы не зависеть от рассинхрона
+        // кешированного carsCount на документе.
+        final salonCars = context
+            .watch<CarsProvider>()
+            .cars
+            .where((c) => c.autosalonId == uid)
+            .toList();
+        final totalViews =
+            salonCars.fold<int>(0, (acc, c) => acc + c.viewsCount);
+        final totalLikes =
+            salonCars.fold<int>(0, (acc, c) => acc + c.likesCount);
+
         return Padding(
-          padding: EdgeInsets.fromLTRB(4.w, 0, 4.w, 3.h),
-          child: GestureDetector(
+          padding: const EdgeInsets.fromLTRB(20, 0, 20, 14),
+          child: Pressable(
             onTap: () => Navigator.push(
               context,
               MaterialPageRoute(
                 builder: (_) => AutosalonStatsPage(salonId: uid),
               ),
             ),
-            behavior: HitTestBehavior.opaque,
             child: Container(
               width: double.infinity,
-              padding: EdgeInsets.all(4.5.w),
+              padding: const EdgeInsets.all(18),
               decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(5.w),
-                border:
-                    Border.all(color: _accent.withOpacity(0.35), width: 1.4),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.05),
-                    blurRadius: 12,
-                    offset: const Offset(0, 4),
-                  ),
-                ],
+                gradient: AppColors.darkGradient,
+                borderRadius: BorderRadius.circular(26),
+                boxShadow: AppColors.softShadow(0.18),
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Container(
-                        width: 13.w,
-                        height: 13.w,
+                        width: 52,
+                        height: 52,
                         decoration: BoxDecoration(
-                          color: _accent.withOpacity(0.1),
-                          borderRadius: BorderRadius.circular(3.5.w),
+                          color: Colors.white.withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(16),
                           image: hasLogo
                               ? DecorationImage(
                                   image: NetworkImage(logoUrl),
@@ -221,13 +230,12 @@ class _MyAutosalonEntryCard extends StatelessWidget {
                                 )
                               : null,
                         ),
-                        alignment: Alignment.center,
                         child: hasLogo
                             ? null
-                            : Icon(Icons.storefront_rounded,
-                                color: _accent, size: 3.h),
+                            : const Icon(Icons.storefront_rounded,
+                                color: Colors.white, size: 26),
                       ),
-                      SizedBox(width: 3.5.w),
+                      const SizedBox(width: 14),
                       Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
@@ -241,93 +249,73 @@ class _MyAutosalonEntryCard extends StatelessWidget {
                                         : 'Мой автосалон',
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
-                                    style: TextStyle(
-                                      fontSize: 15.sp,
+                                    style: const TextStyle(
+                                      fontSize: 18,
                                       fontWeight: FontWeight.w800,
-                                      color: _ink,
+                                      color: Colors.white,
                                     ),
                                   ),
                                 ),
-                                SizedBox(width: 2.w),
+                                const SizedBox(width: 8),
                                 Container(
-                                  padding: EdgeInsets.symmetric(
-                                      horizontal: 2.w, vertical: 0.3.h),
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 8, vertical: 3),
                                   decoration: BoxDecoration(
-                                    color: _accent.withOpacity(0.12),
-                                    borderRadius:
-                                        BorderRadius.circular(1.5.w),
+                                    gradient: AppColors.primaryGradient,
+                                    borderRadius: BorderRadius.circular(8),
                                   ),
-                                  child: Text(
+                                  child: const Text(
                                     'Владелец',
                                     style: TextStyle(
-                                      fontSize: 8.5.sp,
-                                      fontWeight: FontWeight.w700,
-                                      color: _accent,
+                                      fontSize: 10.5,
+                                      fontWeight: FontWeight.w800,
+                                      color: Colors.white,
                                     ),
                                   ),
                                 ),
                               ],
                             ),
-                            SizedBox(height: 0.4.h),
+                            const SizedBox(height: 3),
                             Text(
                               (tagline != null && tagline.isNotEmpty)
                                   ? tagline
                                   : 'Статистика и репутация вашего салона',
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style:
-                                  TextStyle(fontSize: 11.sp, color: _grey),
+                              style: TextStyle(
+                                fontSize: 13,
+                                color: Colors.white.withValues(alpha: 0.6),
+                              ),
                             ),
                           ],
                         ),
                       ),
-                      Icon(Icons.chevron_right_rounded,
-                          color: _grey, size: 2.6.h),
+                      Icon(Icons.arrow_forward_ios_rounded,
+                          color: Colors.white.withValues(alpha: 0.5),
+                          size: 16),
                     ],
                   ),
-                  SizedBox(height: 2.2.h),
-                  Container(height: 1, color: const Color(0xFFF0F0F0)),
-                  SizedBox(height: 2.h),
-                  // Живая статистика по всем машинам этого автосалона —
-                  // считается на лету, чтобы не зависеть от возможного
-                  // рассинхрона кешированного carsCount на документе.
-                  StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-                    stream: FirebaseFirestore.instance
-                        .collection('cars')
-                        .where('autosalonId', isEqualTo: uid)
-                        .snapshots(),
-                    builder: (context, carsSnap) {
-                      final docs = carsSnap.data?.docs ?? const [];
-                      final carsCount = docs.length;
-                      int totalViews = 0;
-                      int totalLikes = 0;
-                      for (final doc in docs) {
-                        final d = doc.data();
-                        totalViews += (d['viewsCount'] as num?)?.toInt() ?? 0;
-                        totalLikes += (d['likesCount'] as num?)?.toInt() ?? 0;
-                      }
-                      return Row(
-                        children: [
-                          _statItem(
-                            icon: Icons.directions_car_rounded,
-                            value: '$carsCount',
-                            label: 'авто',
-                          ),
-                          _statDivider(),
-                          _statItem(
-                            icon: Icons.visibility_rounded,
-                            value: _compactNumber(totalViews),
-                            label: 'просмотров',
-                          ),
-                          _statDivider(),
-                          _statItem(
-                            icon: Icons.favorite_rounded,
-                            value: _compactNumber(totalLikes),
-                            label: 'лайков',
-                          ),
-                        ],
-                      );
-                    },
+                  const SizedBox(height: 18),
+                  Row(
+                    children: [
+                      _statItem(
+                        icon: Icons.directions_car_rounded,
+                        value: '${salonCars.length}',
+                        label: 'авто',
+                      ),
+                      const SizedBox(width: 10),
+                      _statItem(
+                        icon: Icons.visibility_rounded,
+                        value: compactNumber(totalViews),
+                        label: 'просмотров',
+                      ),
+                      const SizedBox(width: 10),
+                      _statItem(
+                        icon: Icons.favorite_rounded,
+                        value: compactNumber(totalLikes),
+                        label: 'лайков',
+                      ),
+                    ],
                   ),
                 ],
               ),
@@ -338,54 +326,46 @@ class _MyAutosalonEntryCard extends StatelessWidget {
     );
   }
 
-  Widget _statDivider() {
-    return Container(
-      width: 1,
-      height: 5.h,
-      color: const Color(0xFFF0F0F0),
-    );
-  }
-
   Widget _statItem({
     required IconData icon,
     required String value,
     required String label,
   }) {
     return Expanded(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(icon, size: 1.7.h, color: _accent),
-              SizedBox(width: 1.2.w),
-              Text(
-                value,
-                style: TextStyle(
-                  fontSize: 14.sp,
-                  fontWeight: FontWeight.w800,
-                  color: _ink,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.07),
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(icon, size: 15, color: const Color(0xFF9D92FF)),
+                const SizedBox(width: 5),
+                Text(
+                  value,
+                  style: const TextStyle(
+                    fontSize: 17,
+                    fontWeight: FontWeight.w800,
+                    color: Colors.white,
+                  ),
                 ),
+              ],
+            ),
+            const SizedBox(height: 2),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 11.5,
+                color: Colors.white.withValues(alpha: 0.55),
               ),
-            ],
-          ),
-          SizedBox(height: 0.2.h),
-          Text(
-            label,
-            style: TextStyle(fontSize: 9.5.sp, color: _grey),
-          ),
-        ],
+            ),
+          ],
+        ),
       ),
     );
-  }
-
-  String _compactNumber(int value) {
-    if (value >= 1000000) {
-      return '${(value / 1000000).toStringAsFixed(1)}M';
-    }
-    if (value >= 1000) {
-      return '${(value / 1000).toStringAsFixed(1)}K';
-    }
-    return '$value';
   }
 }

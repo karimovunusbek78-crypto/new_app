@@ -1334,7 +1334,10 @@ class _AutosalonStatsPageState extends State<AutosalonStatsPage> {
       onTap: () {
         final c = _galleryVideoController;
         if (c == null) return;
-        setState(() => c.value.isPlaying ? c.pause() : c.play());
+        // play()/pause() возвращают Future — вызываем их ВНЕ setState
+        // (иначе assertion "setState() callback returned a Future").
+        c.value.isPlaying ? c.pause() : c.play();
+        setState(() {});
       },
       child: ClipRRect(
         borderRadius: BorderRadius.circular(3.5.w),

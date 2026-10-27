@@ -23,7 +23,6 @@ class _AutoslonPageState extends State<AutoslonPage>
   // Accent colors
   static const _accentDark = Color(0xFF111111);
   static const _accentBlue = Color(0xFF5B4FD9);
-  static const _accentLight = Color(0xFFF5F3FF);
 
   // Contact details
   static const _whatsappNumber = '996555510225';
