@@ -174,6 +174,9 @@ class CarsProvider extends ChangeNotifier {
     if (uid != null && uid == ownerId) return;
 
     final carRef = _firestore.collection('cars').doc(carId);
+    // A failed view count must never break the screen. (catchError((_) {})
+    // on these futures threw a TypeError itself, since the handler has to
+    // return the future's value type.)
     try {
       await carRef.update({'viewsCount': FieldValue.increment(1)});
       await carRef.collection('viewLog').add({

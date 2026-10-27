@@ -181,20 +181,6 @@ class _MyAutosalonEntryCard extends StatelessWidget {
         final logoUrl = salon['logoUrl'] as String?;
         final hasLogo = logoUrl != null && logoUrl.isNotEmpty;
 
-        // Живая статистика по всем машинам этого автосалона — считается
-        // на лету из уже загруженного CarsProvider (без отдельного
-        // Firestore-запроса), чтобы не зависеть от рассинхрона
-        // кешированного carsCount на документе.
-        final salonCars = context
-            .watch<CarsProvider>()
-            .cars
-            .where((c) => c.autosalonId == uid)
-            .toList();
-        final totalViews =
-            salonCars.fold<int>(0, (acc, c) => acc + c.viewsCount);
-        final totalLikes =
-            salonCars.fold<int>(0, (acc, c) => acc + c.likesCount);
-
         return Padding(
           padding: const EdgeInsets.fromLTRB(20, 0, 20, 14),
           child: Pressable(
@@ -296,26 +282,46 @@ class _MyAutosalonEntryCard extends StatelessWidget {
                     ],
                   ),
                   const SizedBox(height: 18),
-                  Row(
-                    children: [
-                      _statItem(
-                        icon: Icons.directions_car_rounded,
-                        value: '${salonCars.length}',
-                        label: 'авто',
-                      ),
-                      const SizedBox(width: 10),
-                      _statItem(
-                        icon: Icons.visibility_rounded,
-                        value: compactNumber(totalViews),
-                        label: 'просмотров',
-                      ),
-                      const SizedBox(width: 10),
-                      _statItem(
-                        icon: Icons.favorite_rounded,
-                        value: compactNumber(totalLikes),
-                        label: 'лайков',
-                      ),
-                    ],
+                  // Живая статистика по всем машинам этого автосалона —
+                  // считается на лету, чтобы не зависеть от возможного
+                  // рассинхрона кешированного carsCount на документе.
+                  StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                    stream: FirebaseFirestore.instance
+                        .collection('cars')
+                        .where('autosalonId', isEqualTo: uid)
+                        .snapshots(),
+                    builder: (context, carsSnap) {
+                      final docs = carsSnap.data?.docs ?? const [];
+                      final carsCount = docs.length;
+                      int totalViews = 0;
+                      int totalLikes = 0;
+                      for (final doc in docs) {
+                        final d = doc.data();
+                        totalViews += (d['viewsCount'] as num?)?.toInt() ?? 0;
+                        totalLikes += (d['likesCount'] as num?)?.toInt() ?? 0;
+                      }
+                      return Row(
+                        children: [
+                          _statItem(
+                            icon: Icons.directions_car_rounded,
+                            value: '$carsCount',
+                            label: 'авто',
+                          ),
+                          const SizedBox(width: 10),
+                          _statItem(
+                            icon: Icons.visibility_rounded,
+                            value: compactNumber(totalViews),
+                            label: 'просмотров',
+                          ),
+                          const SizedBox(width: 10),
+                          _statItem(
+                            icon: Icons.favorite_rounded,
+                            value: compactNumber(totalLikes),
+                            label: 'лайков',
+                          ),
+                        ],
+                      );
+                    },
                   ),
                 ],
               ),
