@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:new_app/src/pages/autoslon/autoslon_page.dart';
-import 'package:new_app/src/pages/car_sell/car_sell_page.dart';
+import 'package:new_app/src/pages/autoslon/autoslon_publish/autoslon_publish_page.dart';
+import 'package:new_app/src/pages/car_sell/car_publish/car_publish_page.dart';
 import 'package:responsive_sizer/responsive_sizer.dart';
 
 class AddPage extends StatefulWidget {
@@ -31,11 +31,11 @@ class _AddPageState extends State<AddPage> with TickerProviderStateMixin {
   // Публиковать может любой пользователь — сразу открываем форму,
   // без экрана запроса разрешения у администратора.
   void _onServiceTap() {
-    Navigator.push(context, MaterialPageRoute(builder: (_) => const AutoslonPage()));
+    Navigator.push(context, MaterialPageRoute(builder: (_) => const AutoslonPublishPage()));
   }
 
   void _onCarSaleTap() {
-    Navigator.push(context, MaterialPageRoute(builder: (_) => const CarSellPage()));
+    Navigator.push(context, MaterialPageRoute(builder: (_) => const CarPublishPage()));
   }
 
   /// Builds a fade + slide-up entrance for a child, staggered by [order].
